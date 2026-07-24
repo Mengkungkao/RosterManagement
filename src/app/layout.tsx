@@ -42,6 +42,12 @@ export default function RootLayout({
                 Submit Availability
               </Link>
               <Link
+                href="/today"
+                className="hover:text-zinc-900 dark:hover:text-zinc-50"
+              >
+                Today&apos;s Events
+              </Link>
+              <Link
                 href="/admin"
                 className="hover:text-zinc-900 dark:hover:text-zinc-50"
               >

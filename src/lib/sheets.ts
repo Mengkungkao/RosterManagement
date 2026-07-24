@@ -157,6 +157,26 @@ export async function verifyStaffPassword(
     : { ok: false, found: true, week: emptyWeek(), updatedAt: null };
 }
 
+async function writeRows(rows: RawStaffRow[]): Promise<void> {
+  const sorted = [...rows].sort((a, b) => a.staffName.localeCompare(b.staffName));
+  const values = [HEADER, ...sorted.map((r, i) => toRow(i + 1, r))];
+
+  const sheets = await getSheetsClient();
+  const sheetId = getSheetId();
+  const sheetName = getSheetName();
+
+  await sheets.spreadsheets.values.clear({
+    spreadsheetId: sheetId,
+    range: sheetName,
+  });
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: sheetId,
+    range: `${sheetName}!A1`,
+    valueInputOption: "RAW",
+    requestBody: { values },
+  });
+}
+
 export async function saveStaffAvailability(
   name: string,
   week: WeekAvailability,
@@ -190,26 +210,49 @@ export async function saveStaffAvailability(
     week,
   };
 
-  const merged = [...others, mine].sort((a, b) =>
-    a.staffName.localeCompare(b.staffName)
-  );
+  await writeRows([...others, mine]);
 
-  const values = [HEADER, ...merged.map((r, i) => toRow(i + 1, r))];
+  return { ok: true };
+}
 
-  const sheets = await getSheetsClient();
-  const sheetId = getSheetId();
-  const sheetName = getSheetName();
+// Logs a staff member in without touching their availability data: verifies
+// their password if they already have one, or claims `password` as theirs if
+// they don't yet (new name, or a legacy row from before passwords existed).
+// Used by features other than the availability form itself (e.g. Today's
+// Events) that still need to authenticate as a specific staff member.
+export async function claimOrVerifyStaffPassword(
+  name: string,
+  password: string
+): Promise<{ ok: boolean; error?: string }> {
+  const staffName = name.trim();
+  const normalized = staffName.toLowerCase();
 
-  await sheets.spreadsheets.values.clear({
-    spreadsheetId: sheetId,
-    range: sheetName,
-  });
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: sheetId,
-    range: `${sheetName}!A1`,
-    valueInputOption: "RAW",
-    requestBody: { values },
-  });
+  const rows = await readRawRows();
+  const existing = rows.find((r) => r.staffName.trim().toLowerCase() === normalized);
+  const existingPassword = existing?.password.trim() ?? "";
+
+  if (existingPassword !== "") {
+    if (!passwordsMatch(password, existingPassword)) {
+      return { ok: false, error: "Incorrect password" };
+    }
+    return { ok: true };
+  }
+
+  if (password.trim() === "") {
+    return { ok: false, error: "A password is required" };
+  }
+
+  const week = existing?.week ?? emptyWeek();
+  const mine: RawStaffRow = {
+    staffName,
+    password: password.trim(),
+    status: existing?.status ?? summarizeWeek(week),
+    updatedAt: existing?.updatedAt ?? formatMelbourneTimestamp(new Date()),
+    week,
+  };
+  const others = rows.filter((r) => r.staffName.trim().toLowerCase() !== normalized);
+
+  await writeRows([...others, mine]);
 
   return { ok: true };
 }
