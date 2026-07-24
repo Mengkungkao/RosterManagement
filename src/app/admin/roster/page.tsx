@@ -3,11 +3,16 @@ import { redirect } from "next/navigation";
 import { ADMIN_COOKIE_NAME, isAdminSessionValid } from "@/lib/admin-auth";
 import { readAllAvailability } from "@/lib/sheets";
 import { listEvents } from "@/lib/events";
-import { matchEventsWithAvailability } from "@/lib/roster-match";
+import { buildWeeklyGrid } from "@/lib/roster-grid";
+import { DAYS } from "@/lib/availability";
 import AdminControls from "../AdminControls";
 import AdminNav from "../AdminNav";
 
 export const dynamic = "force-dynamic";
+
+function formatHour(hour: number): string {
+  return `${String(hour).padStart(2, "0")}:00`;
+}
 
 export default async function RosterMatchPage() {
   const cookieStore = await cookies();
@@ -16,25 +21,26 @@ export default async function RosterMatchPage() {
     redirect("/admin/login");
   }
 
-  let matches: ReturnType<typeof matchEventsWithAvailability> = [];
+  let grid: ReturnType<typeof buildWeeklyGrid> | null = null;
   let loadError: string | null = null;
   try {
     const [staff, events] = await Promise.all([readAllAvailability(), listEvents()]);
-    matches = matchEventsWithAvailability(events, staff);
+    grid = buildWeeklyGrid(events, staff);
   } catch (err) {
     loadError = err instanceof Error ? err.message : "Failed to load roster match";
   }
 
   return (
     <div className="flex flex-1 flex-col bg-zinc-50 px-4 py-10 dark:bg-black sm:py-16">
-      <div className="mx-auto w-full max-w-4xl">
+      <div className="mx-auto w-full max-w-7xl">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
               Roster Match
             </h1>
             <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-              For each planned event, staff whose weekly availability covers it.
+              Events (indigo) and available staff (green) by day and hour, in
+              Melbourne time.
             </p>
           </div>
           <AdminControls />
@@ -47,56 +53,83 @@ export default async function RosterMatchPage() {
           </div>
         )}
 
-        {!loadError && matches.length === 0 && (
-          <div className="mt-6 rounded-lg border border-zinc-200 bg-white p-6 text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400">
-            No events planned yet.
-          </div>
-        )}
-
-        {!loadError && matches.length > 0 && (
-          <div className="mt-6 space-y-4">
-            {matches.map(({ event, weekday, available }) => (
-              <div
-                key={event.id}
-                className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950"
-              >
-                <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <h2 className="font-medium text-zinc-900 dark:text-zinc-50">
-                    {event.name}
-                  </h2>
-                  <span className="text-sm text-zinc-500 dark:text-zinc-400">
-                    {event.date} ({weekday}) · {event.startTime}–{event.endTime}
-                  </span>
-                </div>
-                {event.location && (
-                  <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-                    {event.location}
-                  </p>
-                )}
-
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {available.length === 0 ? (
-                    <span className="text-sm text-zinc-400 dark:text-zinc-500">
-                      No one is available for this event yet.
-                    </span>
-                  ) : (
-                    available.map((person) => (
-                      <span
-                        key={person.staffName}
-                        className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${
-                          person.coverage === "full"
-                            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
-                            : "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
-                        }`}
-                      >
-                        {person.staffName}
-                        {person.coverage === "partial" && " (partial)"}
-                      </span>
-                    ))
-                  )}
-                </div>
-              </div>
-            ))}
+        {grid && (
+          <div className="mt-6 overflow-x-auto rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+            <table className="w-full min-w-[1100px] table-fixed border-collapse text-xs">
+              <thead>
+                <tr className="border-b border-zinc-200 text-left dark:border-zinc-800">
+                  <th className="sticky left-0 z-10 w-16 bg-white px-2 py-2 font-medium text-zinc-600 dark:bg-zinc-950 dark:text-zinc-400">
+                    Time
+                  </th>
+                  {DAYS.map((day) => (
+                    <th
+                      key={day}
+                      className="px-2 py-2 font-medium text-zinc-600 dark:text-zinc-400"
+                    >
+                      {day}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {Array.from({ length: 24 }, (_, hour) => (
+                  <tr
+                    key={hour}
+                    className="border-b border-zinc-100 last:border-0 dark:border-zinc-900"
+                  >
+                    <td className="sticky left-0 z-10 whitespace-nowrap bg-white px-2 py-1.5 align-top text-zinc-500 dark:bg-zinc-950 dark:text-zinc-500">
+                      {formatHour(hour)}
+                    </td>
+                    {DAYS.map((day) => {
+                      const cell = grid![day][hour];
+                      const hasEvent = cell.events.length > 0;
+                      return (
+                        <td
+                          key={day}
+                          className={`px-2 py-1.5 align-top ${
+                            hasEvent
+                              ? "bg-indigo-50 dark:bg-indigo-950/40"
+                              : ""
+                          }`}
+                        >
+                          <div className="space-y-1">
+                            {cell.events.map((event, i) => (
+                              <div
+                                key={`${event.eventId}-${i}`}
+                                className="rounded bg-indigo-100 px-1.5 py-0.5 font-medium text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200"
+                              >
+                                {event.phaseLabel ? (
+                                  <>
+                                    {event.name}
+                                    <span className="block font-normal text-indigo-600 dark:text-indigo-300">
+                                      {event.phaseLabel}
+                                    </span>
+                                  </>
+                                ) : (
+                                  event.name
+                                )}
+                              </div>
+                            ))}
+                            {cell.staff.length > 0 && (
+                              <div className="flex flex-wrap gap-1">
+                                {cell.staff.map((name) => (
+                                  <span
+                                    key={name}
+                                    className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+                                  >
+                                    {name}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>

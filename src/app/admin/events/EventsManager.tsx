@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { EventRecord } from "@/lib/events";
+import type { EventPhase, EventRecord } from "@/lib/events";
 
 type Message = { type: "success" | "error"; text: string } | null;
 
@@ -12,6 +12,7 @@ const EMPTY_FORM = {
   endTime: "",
   location: "",
   notes: "",
+  phases: [] as EventPhase[],
 };
 
 export default function EventsManager() {
@@ -51,12 +52,31 @@ export default function EventsManager() {
       endTime: event.endTime,
       location: event.location,
       notes: event.notes,
+      phases: event.phases,
     });
   }
 
   function cancelEdit() {
     setEditingId(null);
     setForm(EMPTY_FORM);
+  }
+
+  function addPhase() {
+    setForm({
+      ...form,
+      phases: [...form.phases, { label: "", time: "" }],
+    });
+  }
+
+  function updatePhase(index: number, field: keyof EventPhase, value: string) {
+    setForm({
+      ...form,
+      phases: form.phases.map((p, i) => (i === index ? { ...p, [field]: value } : p)),
+    });
+  }
+
+  function removePhase(index: number) {
+    setForm({ ...form, phases: form.phases.filter((_, i) => i !== index) });
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -115,7 +135,7 @@ export default function EventsManager() {
   }
 
   return (
-    <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,320px)_1fr]">
+    <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,360px)_1fr]">
       <form
         onSubmit={handleSubmit}
         className="h-fit rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-950"
@@ -193,6 +213,50 @@ export default function EventsManager() {
               className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
             />
           </div>
+
+          <div>
+            <div className="flex items-center justify-between">
+              <label className="block text-sm text-zinc-600 dark:text-zinc-400">
+                Phases (optional)
+              </label>
+              <button
+                type="button"
+                onClick={addPhase}
+                className="text-sm text-zinc-600 underline hover:no-underline dark:text-zinc-400"
+              >
+                + Add phase
+              </button>
+            </div>
+            {form.phases.length > 0 && (
+              <div className="mt-2 space-y-2">
+                {form.phases.map((phase, index) => (
+                  <div key={index} className="flex gap-2">
+                    <input
+                      type="time"
+                      value={phase.time}
+                      onChange={(e) => updatePhase(index, "time", e.target.value)}
+                      className="w-28 rounded-lg border border-zinc-300 px-2 py-1.5 text-sm text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+                    />
+                    <input
+                      type="text"
+                      placeholder={`Phase ${index + 1} e.g. Entree serve`}
+                      value={phase.label}
+                      onChange={(e) => updatePhase(index, "label", e.target.value)}
+                      className="flex-1 rounded-lg border border-zinc-300 px-2 py-1.5 text-sm text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removePhase(index)}
+                      className="px-2 text-zinc-400 hover:text-red-600 dark:hover:text-red-400"
+                      aria-label="Remove phase"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         {message && (
@@ -259,19 +323,31 @@ export default function EventsManager() {
                   key={event.id}
                   className="border-b border-zinc-100 last:border-0 dark:border-zinc-900"
                 >
-                  <td className="px-4 py-3 font-medium text-zinc-800 dark:text-zinc-200">
+                  <td className="px-4 py-3 align-top font-medium text-zinc-800 dark:text-zinc-200">
                     {event.name}
+                    {event.phases.length > 0 && (
+                      <ul className="mt-1 space-y-0.5 text-xs font-normal text-zinc-500 dark:text-zinc-400">
+                        {event.phases.map((phase, i) => (
+                          <li key={i}>
+                            {phase.time && (
+                              <span className="tabular-nums">{phase.time} </span>
+                            )}
+                            {phase.label}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap text-zinc-600 dark:text-zinc-400">
+                  <td className="px-4 py-3 align-top whitespace-nowrap text-zinc-600 dark:text-zinc-400">
                     {event.date}
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap text-zinc-600 dark:text-zinc-400">
+                  <td className="px-4 py-3 align-top whitespace-nowrap text-zinc-600 dark:text-zinc-400">
                     {event.startTime}–{event.endTime}
                   </td>
-                  <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">
+                  <td className="px-4 py-3 align-top text-zinc-600 dark:text-zinc-400">
                     {event.location || "—"}
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap text-right">
+                  <td className="px-4 py-3 align-top whitespace-nowrap text-right">
                     <button
                       type="button"
                       onClick={() => startEdit(event)}

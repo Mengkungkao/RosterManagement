@@ -10,11 +10,14 @@ Sheet, so there's no database to manage — the sheet *is* the database.
 - **Admin → Availability** (`/admin`) — password-protected table of every staff
   member's availability for the week, read live from the sheet.
 - **Admin → Events** (`/admin/events`) — add, edit, and delete planned events (name,
-  date, start/end time, location, notes).
-- **Admin → Roster Match** (`/admin/roster`) — for each event, automatically lists
-  which staff are available to work it, based on their weekly availability for that
-  event's day of the week. Badged **full** (covers the whole event) or **partial**
-  (covers only part of it).
+  date, start/end time, location, notes), each with optional **phases** — timed
+  milestones within the event, e.g. "18:30 Entree serve", "19:00 Main start". Phases
+  are just labels for a moment in time; leave the time blank to mean "at the start of
+  the event".
+- **Admin → Roster Match** (`/admin/roster`) — a weekly grid: days (Mon–Sun) across
+  the top, hours (00:00–23:00, Melbourne time) down the side. Each cell highlights
+  events happening in that hour (with the active phase label, if any) alongside the
+  staff who are available to work it, computed from their weekly availability.
 
 ## 1. Create the Google Sheet
 
@@ -79,11 +82,15 @@ auto-computed summary (`Fully available` / `Partially available` / `Unavailable`
 same name (case-insensitive) replaces that person's row rather than duplicating it.
 
 **Events tab** — one row per event:
-`No | Event Name | Date | Start Time | End Time | Location | Notes | ID`. Managed
-entirely from `/admin/events`; the `ID` column is an internal key used for editing
-and deleting — leave it alone if you edit the sheet directly.
+`No | Event Name | Date | Start Time | End Time | Location | Notes | Phases | ID`.
+Managed entirely from `/admin/events`; the `ID` column is an internal key used for
+editing and deleting — leave it alone if you edit the sheet directly. Each phase is
+stored on its own line within the `Phases` cell as `HH:MM Label` (or just `Label` if
+no time was set).
 
-**Roster Match** (`/admin/roster`) doesn't store anything — it reads both tabs live
-and, for each event, converts the event's date to a day of week (in Melbourne time)
-and checks each staff member's availability for that day, accounting for custom hours
-and overnight ranges.
+**Roster Match** (`/admin/roster`) doesn't store anything — it reads both tabs live,
+converts each event's date to a day of week (in Melbourne time), and for every hour of
+that day checks which events overlap it and which staff are available, accounting for
+custom hours and overnight ranges. Because events are matched by day of week rather
+than exact date, events on the same weekday in different weeks share the same grid
+row — the grid represents a typical week, not a specific one.

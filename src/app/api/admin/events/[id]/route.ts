@@ -1,32 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAdminRequest } from "@/lib/admin-auth";
-import { deleteEvent, updateEvent, EventInput } from "@/lib/events";
+import { deleteEvent, updateEvent, parseEventInput } from "@/lib/events";
 
 export const dynamic = "force-dynamic";
-
-function parseInput(body: unknown): EventInput | null {
-  if (typeof body !== "object" || body === null) return null;
-  const { name, date, startTime, endTime, location, notes } =
-    body as Record<string, unknown>;
-
-  if (
-    typeof name !== "string" ||
-    typeof date !== "string" ||
-    typeof startTime !== "string" ||
-    typeof endTime !== "string"
-  ) {
-    return null;
-  }
-
-  return {
-    name: name.trim(),
-    date: date.trim(),
-    startTime: startTime.trim(),
-    endTime: endTime.trim(),
-    location: typeof location === "string" ? location.trim() : "",
-    notes: typeof notes === "string" ? notes.trim() : "",
-  };
-}
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -42,7 +18,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const input = parseInput(body);
+  const input = parseEventInput(body);
   if (!input) {
     return NextResponse.json({ error: "Invalid event data" }, { status: 400 });
   }
