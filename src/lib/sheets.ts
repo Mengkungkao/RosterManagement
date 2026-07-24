@@ -77,22 +77,21 @@ async function readRawRows(): Promise<RawStaffRow[]> {
   });
   const rows = res.data.values || [];
 
-  return rows
-    .filter((r) => r[1])
-    .map((r) => {
-      const week = emptyWeek();
-      DAYS.forEach((day, i) => {
-        week[day] = parseDayCell(String(r[FIRST_DAY_COLUMN + i] ?? ""));
-      });
-      return {
-        staffName: String(r[1]),
-        status: String(r[2] || summarizeWeek(week)),
-        updatedAt: String(r[UPDATED_AT_COLUMN] || ""),
-        password: String(r[PASSWORD_COLUMN] || ""),
-        week,
-      };
-    })
-    .sort((a, b) => a.staffName.localeCompare(b.staffName));
+  // Kept in whatever order the sheet has them in — no alphabetical resort —
+  // so rows stay where whoever maintains the sheet put them.
+  return rows.filter((r) => r[1]).map((r) => {
+    const week = emptyWeek();
+    DAYS.forEach((day, i) => {
+      week[day] = parseDayCell(String(r[FIRST_DAY_COLUMN + i] ?? ""));
+    });
+    return {
+      staffName: String(r[1]),
+      status: String(r[2] || summarizeWeek(week)),
+      updatedAt: String(r[UPDATED_AT_COLUMN] || ""),
+      password: String(r[PASSWORD_COLUMN] || ""),
+      week,
+    };
+  });
 }
 
 function toRow(no: number, staff: RawStaffRow): (string | number)[] {
@@ -157,9 +156,21 @@ export async function verifyStaffPassword(
     : { ok: false, found: true, week: emptyWeek(), updatedAt: null };
 }
 
+// Existing staff keep their current row (updated in place); a name that isn't
+// already there is a new staff member and goes on the bottom — never
+// resorted alphabetically, so the sheet's row order stays whatever whoever
+// maintains it set it to.
+function upsertRow(rows: RawStaffRow[], mine: RawStaffRow): RawStaffRow[] {
+  const normalized = mine.staffName.trim().toLowerCase();
+  const index = rows.findIndex((r) => r.staffName.trim().toLowerCase() === normalized);
+  if (index === -1) return [...rows, mine];
+  const next = [...rows];
+  next[index] = mine;
+  return next;
+}
+
 async function writeRows(rows: RawStaffRow[]): Promise<void> {
-  const sorted = [...rows].sort((a, b) => a.staffName.localeCompare(b.staffName));
-  const values = [HEADER, ...sorted.map((r, i) => toRow(i + 1, r))];
+  const values = [HEADER, ...rows.map((r, i) => toRow(i + 1, r))];
 
   const sheets = await getSheetsClient();
   const sheetId = getSheetId();
@@ -200,8 +211,6 @@ export async function saveStaffAvailability(
 
   const finalPassword = existingPassword !== "" ? existingPassword : password.trim();
 
-  const others = rows.filter((r) => r.staffName.trim().toLowerCase() !== normalized);
-
   const mine: RawStaffRow = {
     staffName,
     password: finalPassword,
@@ -210,7 +219,7 @@ export async function saveStaffAvailability(
     week,
   };
 
-  await writeRows([...others, mine]);
+  await writeRows(upsertRow(rows, mine));
 
   return { ok: true };
 }
@@ -250,9 +259,8 @@ export async function claimOrVerifyStaffPassword(
     updatedAt: existing?.updatedAt ?? formatMelbourneTimestamp(new Date()),
     week,
   };
-  const others = rows.filter((r) => r.staffName.trim().toLowerCase() !== normalized);
 
-  await writeRows([...others, mine]);
+  await writeRows(upsertRow(rows, mine));
 
   return { ok: true };
 }
