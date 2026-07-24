@@ -98,11 +98,19 @@ Visit `http://localhost:3000` to submit availability, and
 ## How data is stored
 
 **Availability tab** — one row per staff member:
-`No | Name | Status | Mon | Tue | Wed | Thu | Fri | Sat | Sun | Last Updated`.
+`No | Name | Status | Mon | Tue | Wed | Thu | Fri | Sat | Sun | Last Updated | Password`.
 Each day cell reads `Unavailable`, `All day`, or `HH:MM-HH:MM`. `Status` is an
 auto-computed summary (`Fully available` / `Partially available` / `Unavailable`).
 `Last Updated` is the submission time in Melbourne local time. Re-saving under the
 same name (case-insensitive) replaces that person's row rather than duplicating it.
+`Password` is set by the staff member the first time they submit under that name
+(stored in plain text, same trust model as `ADMIN_PASSWORD`) and is required to
+view or edit that row afterwards. It's appended as the last column on purpose, so
+rows saved before this feature existed still read correctly by position — an
+empty cell there just means the row isn't protected yet, and the next submission
+under that name claims a password for it. Clear the cell manually to reset a
+forgotten password. This column is never sent to the admin dashboard; only a
+`hasPassword` flag is.
 
 **Events tab** — one row per event:
 `No | Event Name | Date | Start Time | End Time | Location | Notes | Phases | ID`.

@@ -21,10 +21,14 @@ export async function GET(req: NextRequest) {
 
   try {
     const existing = await readStaffAvailability(name);
+    const hasPassword = existing?.hasPassword ?? false;
     return NextResponse.json({
       found: existing !== null,
-      week: existing?.week ?? emptyWeek(),
-      updatedAt: existing?.updatedAt ?? null,
+      hasPassword,
+      // Only reveal saved availability when the entry isn't password-protected.
+      // Protected entries must go through /api/availability/verify first.
+      week: hasPassword ? emptyWeek() : (existing?.week ?? emptyWeek()),
+      updatedAt: hasPassword ? null : (existing?.updatedAt ?? null),
     });
   } catch (err) {
     console.error("Failed to load availability", err);
@@ -79,13 +83,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { name, week: weekInput } = (body ?? {}) as Record<string, unknown>;
+  const { name, week: weekInput, password } = (body ?? {}) as Record<
+    string,
+    unknown
+  >;
 
   if (typeof name !== "string" || name.trim().length === 0) {
     return NextResponse.json({ error: "Name is required" }, { status: 400 });
   }
   if (name.trim().length > MAX_NAME_LENGTH) {
     return NextResponse.json({ error: "Name is too long" }, { status: 400 });
+  }
+  if (typeof password !== "string" || password.length === 0) {
+    return NextResponse.json({ error: "Password is required" }, { status: 400 });
   }
 
   const week = validateWeek(weekInput);
@@ -97,7 +107,10 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    await saveStaffAvailability(name, week);
+    const result = await saveStaffAvailability(name, week, password);
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: 403 });
+    }
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error("Failed to save availability", err);
