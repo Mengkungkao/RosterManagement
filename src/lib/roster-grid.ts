@@ -2,22 +2,17 @@ import { DAYS, type Day } from "./availability";
 import type { EventRecord } from "./events";
 import type { StaffAvailability } from "./sheets";
 
-const HOURS_IN_DAY = 24;
 const MINUTES_IN_DAY = 1440;
 
-export interface GridEventChip {
-  eventId: string;
-  name: string;
-  location: string;
-  phaseLabel?: string;
+export interface PositionedEvent {
+  event: EventRecord;
+  startMin: number; // clipped to [0, 1440)
+  endMin: number; // clipped to (startMin, 1440]
+  track: number;
+  trackCount: number;
 }
 
-export interface HourCell {
-  hour: number;
-  events: GridEventChip[];
-}
-
-export type WeeklyGrid = Record<Day, HourCell[]>;
+export type WeekLayout = Record<Day, PositionedEvent[]>;
 
 export interface WindowAvailability {
   staffName: string;
@@ -133,42 +128,58 @@ export function getAvailableStaffAt(
   return names.sort((a, b) => a.localeCompare(b));
 }
 
-function emptyGrid(): WeeklyGrid {
-  return DAYS.reduce((grid, day) => {
-    grid[day] = Array.from({ length: HOURS_IN_DAY }, (_, hour) => ({
-      hour,
-      events: [],
-    }));
-    return grid;
-  }, {} as WeeklyGrid);
+// Assigns each of a day's events to the first side-by-side "track" that's free
+// (the classic interval-partitioning / minimum-meeting-rooms algorithm), so
+// overlapping events land in separate columns instead of stacking in one cell.
+function assignTracks(
+  items: { event: EventRecord; start: number; end: number }[]
+): PositionedEvent[] {
+  const sorted = [...items].sort((a, b) => a.start - b.start || a.end - b.end);
+  const trackEnds: number[] = [];
+  const positioned: PositionedEvent[] = [];
+
+  for (const item of sorted) {
+    let track = trackEnds.findIndex((end) => end <= item.start);
+    if (track === -1) {
+      track = trackEnds.length;
+      trackEnds.push(item.end);
+    } else {
+      trackEnds[track] = item.end;
+    }
+    positioned.push({
+      event: item.event,
+      startMin: item.start,
+      endMin: item.end,
+      track,
+      trackCount: 0, // filled in once the day's total track count is known
+    });
+  }
+
+  const trackCount = trackEnds.length || 1;
+  positioned.forEach((p) => (p.trackCount = trackCount));
+  return positioned;
 }
 
-export function buildWeeklyGrid(events: EventRecord[]): WeeklyGrid {
-  const grid = emptyGrid();
+// Lays out events as continuous, non-overlapping blocks per weekday — one
+// block per event (not repeated per hour), with concurrent events placed in
+// side-by-side tracks rather than stacked inside the same slot.
+export function buildWeekLayout(events: EventRecord[]): WeekLayout {
+  const byDay = DAYS.reduce((acc, day) => {
+    acc[day] = [];
+    return acc;
+  }, {} as Record<Day, { event: EventRecord; start: number; end: number }[]>);
 
   for (const event of events) {
     const weekday = getMelbourneWeekday(event.date);
-    const startMin = toMinutes(event.startTime);
-    const endMin = toMinutes(event.endTime);
-
-    const phaseLabelByHour = new Map<number, string>();
-    for (const phase of event.phases) {
-      if (!phase.time) continue;
-      const hour = Math.floor(toMinutes(phase.time) / 60);
-      const existing = phaseLabelByHour.get(hour);
-      phaseLabelByHour.set(hour, existing ? `${existing} · ${phase.label}` : phase.label);
-    }
-
-    for (let hour = 0; hour < HOURS_IN_DAY; hour++) {
-      if (!overlaps(startMin, endMin, hour * 60, hour * 60 + 60)) continue;
-      grid[weekday][hour].events.push({
-        eventId: event.id,
-        name: event.name,
-        location: event.location,
-        phaseLabel: phaseLabelByHour.get(hour),
-      });
-    }
+    const start = toMinutes(event.startTime);
+    const end = toMinutes(event.endTime);
+    // Overnight events are clipped to the end of this weekday for display;
+    // the detail panel's prep/segment/closing math still wraps correctly.
+    byDay[weekday].push({ event, start, end: end <= start ? MINUTES_IN_DAY : end });
   }
 
-  return grid;
+  return DAYS.reduce((layout, day) => {
+    layout[day] = assignTracks(byDay[day]);
+    return layout;
+  }, {} as WeekLayout);
 }

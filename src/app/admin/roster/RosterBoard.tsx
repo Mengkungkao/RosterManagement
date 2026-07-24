@@ -5,7 +5,7 @@ import type { EventRecord } from "@/lib/events";
 import type { StaffAvailability } from "@/lib/sheets";
 import { DAYS } from "@/lib/availability";
 import {
-  buildWeeklyGrid,
+  buildWeekLayout,
   getAvailableStaff,
   getMelbourneWeekday,
   mod1440,
@@ -17,6 +17,10 @@ interface Props {
   events: EventRecord[];
   staff: StaffAvailability[];
 }
+
+const ROW_HEIGHT = 48; // px per hour
+const TOTAL_HEIGHT = ROW_HEIGHT * 24;
+const MIN_BLOCK_PERCENT = (ROW_HEIGHT / 2 / TOTAL_HEIGHT) * 100;
 
 interface Segment {
   label: string;
@@ -106,7 +110,7 @@ function StaffList({ items }: { items: WindowAvailability[] }) {
 }
 
 export default function RosterBoard({ events, staff }: Props) {
-  const grid = useMemo(() => buildWeeklyGrid(events), [events]);
+  const layout = useMemo(() => buildWeekLayout(events), [events]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [prepHours, setPrepHours] = useState(1);
   const [closingHours, setClosingHours] = useState(1);
@@ -136,61 +140,89 @@ export default function RosterBoard({ events, staff }: Props) {
 
   return (
     <>
-      <div className="mt-6 overflow-x-auto rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-        <table className="w-full min-w-[900px] table-fixed border-collapse text-xs">
-          <thead>
-            <tr className="border-b border-zinc-200 text-left dark:border-zinc-800">
-              <th className="sticky left-0 z-10 w-16 bg-white px-2 py-2 font-medium text-zinc-600 dark:bg-zinc-950 dark:text-zinc-400">
-                Time
-              </th>
-              {DAYS.map((day) => (
-                <th
-                  key={day}
-                  className="px-2 py-2 font-medium text-zinc-600 dark:text-zinc-400"
-                >
-                  {day}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
+      <div
+        className="mt-6 overflow-auto rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950"
+        style={{ maxHeight: "75vh" }}
+      >
+        <div
+          className="grid"
+          style={{
+            gridTemplateColumns: "56px repeat(7, minmax(140px, 1fr))",
+            minWidth: "1080px",
+          }}
+        >
+          <div className="sticky top-0 left-0 z-30 border-b border-zinc-200 bg-white px-2 py-2 text-xs font-medium text-zinc-600 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400">
+            Time
+          </div>
+          {DAYS.map((day) => (
+            <div
+              key={day}
+              className="sticky top-0 z-20 border-b border-l border-zinc-200 bg-white px-2 py-2 text-xs font-medium text-zinc-600 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400"
+            >
+              {day}
+            </div>
+          ))}
+
+          <div
+            className="sticky left-0 z-10 bg-white dark:bg-zinc-950"
+            style={{ height: TOTAL_HEIGHT }}
+          >
             {Array.from({ length: 24 }, (_, hour) => (
-              <tr
+              <div
                 key={hour}
-                className="border-b border-zinc-100 last:border-0 dark:border-zinc-900"
+                className="absolute inset-x-0 border-t border-zinc-100 px-2 text-[11px] text-zinc-400 dark:border-zinc-900 dark:text-zinc-500"
+                style={{ top: hour * ROW_HEIGHT, height: ROW_HEIGHT }}
               >
-                <td className="sticky left-0 z-10 whitespace-nowrap bg-white px-2 py-1.5 align-top text-zinc-500 dark:bg-zinc-950 dark:text-zinc-500">
-                  {formatHour(hour)}
-                </td>
-                {DAYS.map((day) => {
-                  const cell = grid[day][hour];
-                  return (
-                    <td key={day} className="px-1.5 py-1.5 align-top">
-                      <div className="space-y-1">
-                        {cell.events.map((event, i) => (
-                          <button
-                            key={`${event.eventId}-${i}`}
-                            type="button"
-                            onClick={() => setSelectedId(event.eventId)}
-                            className={`block w-full rounded px-1.5 py-1 text-left leading-tight transition-opacity hover:opacity-80 ${colorForEvent(event.eventId)}`}
-                          >
-                            <div className="font-medium">{event.name}</div>
-                            {event.location && (
-                              <div className="opacity-80">{event.location}</div>
-                            )}
-                            {event.phaseLabel && (
-                              <div className="opacity-80">{event.phaseLabel}</div>
-                            )}
-                          </button>
-                        ))}
-                      </div>
-                    </td>
-                  );
-                })}
-              </tr>
+                {formatHour(hour)}
+              </div>
             ))}
-          </tbody>
-        </table>
+          </div>
+
+          {DAYS.map((day) => (
+            <div
+              key={day}
+              className="relative border-l border-zinc-100 dark:border-zinc-900"
+              style={{ height: TOTAL_HEIGHT }}
+            >
+              {Array.from({ length: 24 }, (_, hour) => (
+                <div
+                  key={hour}
+                  className="absolute inset-x-0 border-t border-zinc-100 dark:border-zinc-900"
+                  style={{ top: hour * ROW_HEIGHT }}
+                />
+              ))}
+              {layout[day].map((pe) => (
+                <button
+                  key={pe.event.id}
+                  type="button"
+                  onClick={() => setSelectedId(pe.event.id)}
+                  className={`absolute overflow-hidden rounded px-1.5 py-1 text-left text-[11px] leading-tight transition-opacity hover:opacity-80 ${colorForEvent(pe.event.id)}`}
+                  style={{
+                    top: `${(pe.startMin / 1440) * 100}%`,
+                    height: `${Math.max(((pe.endMin - pe.startMin) / 1440) * 100, MIN_BLOCK_PERCENT)}%`,
+                    left: `calc(${(pe.track / pe.trackCount) * 100}% + 2px)`,
+                    width: `calc(${100 / pe.trackCount}% - 4px)`,
+                  }}
+                >
+                  <div className="font-medium">{pe.event.name}</div>
+                  {pe.event.location && (
+                    <div className="opacity-80">{pe.event.location}</div>
+                  )}
+                  {pe.event.phases.length > 0 && (
+                    <div className="mt-0.5 space-y-0.5 opacity-80">
+                      {pe.event.phases.map((phase, i) => (
+                        <div key={i}>
+                          {phase.time && `${phase.time} `}
+                          {phase.label}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
       </div>
 
       {selectedEvent && details && (
