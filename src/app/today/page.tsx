@@ -13,12 +13,13 @@ import {
 import StaffAccessGate, { StaffAccessProps } from "../StaffAccessGate";
 
 const ROW_HEIGHT_PX = 64; // px per hour in the time grid
-// Fixed lane above the event's actual start row for its name/time/location —
-// the card extends upward into this space rather than eating into the
-// grid-aligned body below, so an activity at the event's own start time
-// (very common — an untimed action defaults to it) still lines up with the
-// real hour row instead of colliding with the header text.
-const CARD_HEADER_HEIGHT = 32;
+// Fixed lane above the event's actual start row for its name, location, and
+// time range (each its own line — three lines total) — the card extends
+// upward into this space rather than eating into the grid-aligned body
+// below, so an activity at the event's own start time (very common — an
+// untimed action defaults to it) still lines up with the real hour row
+// instead of colliding with the header text.
+const CARD_HEADER_HEIGHT = 46;
 const CARD_BODY_BOTTOM_PADDING = 18; // room for the last activity's label to fully show
 // Room above the first hour row for that header lane to expand into — without
 // this, an event starting right at the top of the window would push its
@@ -116,15 +117,14 @@ function EventCard({
       }}
     >
       {/* Header always renders first — a real flex-column child, not an
-          absolutely-positioned overlay — so nothing can ever paint over it. */}
+          absolutely-positioned overlay — so nothing can ever paint over it.
+          Name, then location, then the time range, each its own line. */}
       <div className="shrink-0 px-1.5 pt-1" style={{ height: CARD_HEADER_HEIGHT }}>
-        <div className="flex flex-wrap items-baseline gap-x-1.5">
-          <span className="font-semibold">{pe.event.name}</span>
-          <span className="tabular-nums opacity-80">
-            {pe.event.startTime}–{pe.event.endTime}
-          </span>
-        </div>
+        <div className="truncate font-semibold">{pe.event.name}</div>
         {pe.event.location && <div className="truncate opacity-80">{pe.event.location}</div>}
+        <div className="tabular-nums opacity-80">
+          {pe.event.startTime}–{pe.event.endTime}
+        </div>
       </div>
 
       {sortedActions.length > 0 && (
