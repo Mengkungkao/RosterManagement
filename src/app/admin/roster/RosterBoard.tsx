@@ -1,16 +1,17 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { EventRecord } from "@/lib/events";
 import type { StaffAvailability } from "@/lib/sheets";
 import type { RosterAssignment } from "@/lib/roster-assignment";
-import { DAYS } from "@/lib/availability";
+import { DAYS, type Day } from "@/lib/availability";
 import {
   buildWeekLayout,
   getAvailableStaff,
   getMelbourneWeekday,
   mod1440,
   toMinutes,
+  type PositionedEvent,
   type WindowAvailability,
 } from "@/lib/roster-grid";
 
@@ -27,6 +28,9 @@ function byEventId(assignments: RosterAssignment[]): Record<string, RosterAssign
 const ROW_HEIGHT = 48; // px per hour
 const TOTAL_HEIGHT = ROW_HEIGHT * 24;
 const MIN_BLOCK_PERCENT = (ROW_HEIGHT / 2 / TOTAL_HEIGHT) * 100;
+const DEFAULT_COL_WIDTH = 210; // px
+const MIN_COL_WIDTH = 140;
+const MAX_COL_WIDTH = 520;
 
 interface Segment {
   label: string;
@@ -88,13 +92,24 @@ function buildSegments(event: EventRecord): Segment[] {
   }));
 }
 
-function buildSchedule(event: EventRecord): { time: string; label: string }[] {
-  const segments = buildSegments(event);
-  if (segments.length === 0) return [];
-  return [
-    ...segments.map((seg) => ({ time: formatMinutes(seg.start), label: seg.label })),
-    { time: formatMinutes(segments[segments.length - 1].end), label: "End" },
-  ];
+const MONTH_ABBR = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+function formatShortDate(dateStr: string): string {
+  const [, month, day] = dateStr.split("-").map(Number);
+  return `${day} ${MONTH_ABBR[month - 1] ?? ""}`.trim();
 }
 
 function RosteredStaff({ assignment }: { assignment: RosterAssignment }) {
@@ -143,9 +158,177 @@ function StaffList({ items }: { items: WindowAvailability[] }) {
   );
 }
 
+function EventBlock({
+  pe,
+  assignment,
+  onSelect,
+}: {
+  pe: PositionedEvent;
+  assignment: RosterAssignment | undefined;
+  onSelect: () => void;
+}) {
+  const duration = pe.endMin - pe.startMin;
+  const timedPhases = pe.event.phases.filter((p) => p.time);
+  const untimedPhases = pe.event.phases.filter((p) => !p.time);
+
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={`absolute overflow-hidden rounded px-1.5 py-1 text-left text-[11px] leading-tight transition-opacity hover:opacity-80 ${colorForEvent(pe.event.id)}`}
+      style={{
+        top: `${(pe.startMin / 1440) * 100}%`,
+        height: `${Math.max((duration / 1440) * 100, MIN_BLOCK_PERCENT)}%`,
+        left: `calc(${(pe.track / pe.trackCount) * 100}% + 2px)`,
+        width: `calc(${100 / pe.trackCount}% - 4px)`,
+      }}
+    >
+      <div className="flex flex-wrap items-baseline gap-x-1.5">
+        <span className="font-semibold">{pe.event.name}</span>
+        <span className="tabular-nums opacity-80">
+          {formatShortDate(pe.event.date)} · {pe.event.startTime}–{pe.event.endTime}
+        </span>
+      </div>
+      {pe.event.location && <div className="opacity-80">{pe.event.location}</div>}
+      {untimedPhases.length > 0 && (
+        <div className="mt-0.5 space-y-0.5 opacity-80">
+          {untimedPhases.map((phase, i) => (
+            <div key={i} className="truncate">
+              {phase.label}
+            </div>
+          ))}
+        </div>
+      )}
+      {assignment && (
+        <div className="mt-0.5 border-t border-current/20 pt-0.5">
+          <RosteredStaff assignment={assignment} />
+        </div>
+      )}
+
+      {/* Phase markers, positioned to line up with their actual (day, time) coordinate on the grid */}
+      {timedPhases.map((phase, i) => {
+        const offset = ((toMinutes(phase.time) - pe.startMin) / duration) * 100;
+        if (offset <= 0 || offset >= 100) return null;
+        return (
+          <div
+            key={i}
+            className="absolute inset-x-0 flex items-center gap-1 border-t border-current/40 bg-black/5 px-1.5 py-0.5 dark:bg-white/10"
+            style={{ top: `${offset}%` }}
+          >
+            <span className="font-semibold tabular-nums">{phase.time}</span>
+            <span className="truncate">{phase.label}</span>
+          </div>
+        );
+      })}
+    </button>
+  );
+}
+
+function HourGridlines() {
+  return (
+    <>
+      {Array.from({ length: 24 }, (_, hour) => (
+        <div
+          key={hour}
+          className="absolute inset-x-0 border-t border-zinc-100 dark:border-zinc-900"
+          style={{ top: hour * ROW_HEIGHT }}
+        />
+      ))}
+    </>
+  );
+}
+
+function DayColumn({
+  positionedEvents,
+  assignments,
+  onSelect,
+}: {
+  positionedEvents: PositionedEvent[];
+  assignments: Record<string, RosterAssignment>;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <div
+      className="relative border-l border-zinc-100 dark:border-zinc-900"
+      style={{ height: TOTAL_HEIGHT }}
+    >
+      <HourGridlines />
+      {positionedEvents.map((pe) => (
+        <EventBlock
+          key={pe.event.id}
+          pe={pe}
+          assignment={assignments[pe.event.id]}
+          onSelect={() => onSelect(pe.event.id)}
+        />
+      ))}
+    </div>
+  );
+}
+
+function TimeGutter() {
+  return (
+    <div
+      className="sticky left-0 z-10 bg-white dark:bg-zinc-950"
+      style={{ height: TOTAL_HEIGHT }}
+    >
+      {Array.from({ length: 24 }, (_, hour) => (
+        <div
+          key={hour}
+          className="absolute inset-x-0 border-t border-zinc-100 px-2 text-[11px] text-zinc-400 dark:border-zinc-900 dark:text-zinc-500"
+          style={{ top: hour * ROW_HEIGHT, height: ROW_HEIGHT }}
+        >
+          {formatHour(hour)}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ResizeHandle({
+  width,
+  onResize,
+}: {
+  width: number;
+  onResize: (newWidth: number) => void;
+}) {
+  const dragState = useRef<{ startX: number; startWidth: number } | null>(null);
+
+  function handlePointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    e.stopPropagation();
+    dragState.current = { startX: e.clientX, startWidth: width };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }
+
+  function handlePointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (!dragState.current) return;
+    const delta = e.clientX - dragState.current.startX;
+    const next = Math.max(
+      MIN_COL_WIDTH,
+      Math.min(MAX_COL_WIDTH, dragState.current.startWidth + delta)
+    );
+    onResize(next);
+  }
+
+  function handlePointerUp(e: React.PointerEvent<HTMLDivElement>) {
+    dragState.current = null;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  }
+
+  return (
+    <div
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      className="absolute top-0 right-0 z-40 h-full w-2.5 cursor-col-resize touch-none select-none hover:bg-zinc-300 active:bg-zinc-400 dark:hover:bg-zinc-700"
+    />
+  );
+}
+
 export default function RosterBoard({ events, staff, initialAssignments }: Props) {
   const layout = useMemo(() => buildWeekLayout(events), [events]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedDay, setSelectedDay] = useState<Day>(DAYS[0]);
+  const [colWidths, setColWidths] = useState<number[]>(() => DAYS.map(() => DEFAULT_COL_WIDTH));
   const [prepHours, setPrepHours] = useState(1);
   const [closingHours, setClosingHours] = useState(1);
   const [assignments, setAssignments] = useState<Record<string, RosterAssignment>>(() =>
@@ -244,90 +427,79 @@ export default function RosterBoard({ events, staff, initialAssignments }: Props
         </button>
       </div>
 
+      {/* Phone/tablet: one day at a time, full width, no drag-resize (nothing to trade width with). */}
+      <div className="mt-4 md:hidden">
+        <div className="flex gap-1 overflow-x-auto rounded-xl border border-zinc-200 bg-white p-1 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+          {DAYS.map((day) => (
+            <button
+              key={day}
+              type="button"
+              onClick={() => setSelectedDay(day)}
+              className={`flex-1 rounded-lg px-2 py-2 text-xs font-medium whitespace-nowrap ${
+                selectedDay === day
+                  ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                  : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900"
+              }`}
+            >
+              {day.slice(0, 3)}
+            </button>
+          ))}
+        </div>
+        <div
+          className="mt-3 overflow-y-auto rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950"
+          style={{ maxHeight: "70vh" }}
+        >
+          <div className="flex">
+            <TimeGutter />
+            <div className="flex-1">
+              <DayColumn
+                positionedEvents={layout[selectedDay]}
+                assignments={assignments}
+                onSelect={setSelectedId}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Desktop/tablet-landscape: full week, with drag-to-resize day columns. */}
       <div
-        className="mt-4 overflow-auto rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950"
+        className="mt-4 hidden overflow-auto rounded-2xl border border-zinc-200 bg-white shadow-sm md:block dark:border-zinc-800 dark:bg-zinc-950"
         style={{ maxHeight: "75vh" }}
       >
         <div
           className="grid"
           style={{
-            gridTemplateColumns: "56px repeat(7, minmax(140px, 1fr))",
-            minWidth: "1080px",
+            gridTemplateColumns: `56px ${colWidths.map((w) => `${w}px`).join(" ")}`,
           }}
         >
           <div className="sticky top-0 left-0 z-30 border-b border-zinc-200 bg-white px-2 py-2 text-xs font-medium text-zinc-600 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400">
             Time
           </div>
-          {DAYS.map((day) => (
+          {DAYS.map((day, i) => (
             <div
               key={day}
-              className="sticky top-0 z-20 border-b border-l border-zinc-200 bg-white px-2 py-2 text-xs font-medium text-zinc-600 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400"
+              className="sticky top-0 z-20 relative border-b border-l border-zinc-200 bg-white px-2 py-2 text-xs font-medium text-zinc-600 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400"
             >
               {day}
+              <ResizeHandle
+                width={colWidths[i]}
+                onResize={(newWidth) =>
+                  setColWidths((prev) => prev.map((w, wi) => (wi === i ? newWidth : w)))
+                }
+              />
             </div>
           ))}
 
-          <div
-            className="sticky left-0 z-10 bg-white dark:bg-zinc-950"
-            style={{ height: TOTAL_HEIGHT }}
-          >
-            {Array.from({ length: 24 }, (_, hour) => (
-              <div
-                key={hour}
-                className="absolute inset-x-0 border-t border-zinc-100 px-2 text-[11px] text-zinc-400 dark:border-zinc-900 dark:text-zinc-500"
-                style={{ top: hour * ROW_HEIGHT, height: ROW_HEIGHT }}
-              >
-                {formatHour(hour)}
-              </div>
-            ))}
-          </div>
+          <TimeGutter />
 
           {DAYS.map((day) => (
-            <div
+            <DayColumn
               key={day}
-              className="relative border-l border-zinc-100 dark:border-zinc-900"
-              style={{ height: TOTAL_HEIGHT }}
-            >
-              {Array.from({ length: 24 }, (_, hour) => (
-                <div
-                  key={hour}
-                  className="absolute inset-x-0 border-t border-zinc-100 dark:border-zinc-900"
-                  style={{ top: hour * ROW_HEIGHT }}
-                />
-              ))}
-              {layout[day].map((pe) => (
-                <button
-                  key={pe.event.id}
-                  type="button"
-                  onClick={() => setSelectedId(pe.event.id)}
-                  className={`absolute overflow-hidden rounded px-1.5 py-1 text-left text-[11px] leading-tight transition-opacity hover:opacity-80 ${colorForEvent(pe.event.id)}`}
-                  style={{
-                    top: `${(pe.startMin / 1440) * 100}%`,
-                    height: `${Math.max(((pe.endMin - pe.startMin) / 1440) * 100, MIN_BLOCK_PERCENT)}%`,
-                    left: `calc(${(pe.track / pe.trackCount) * 100}% + 2px)`,
-                    width: `calc(${100 / pe.trackCount}% - 4px)`,
-                  }}
-                >
-                  <div className="font-semibold">{pe.event.name}</div>
-                  {pe.event.location && (
-                    <div className="opacity-80">{pe.event.location}</div>
-                  )}
-                  <div className="mt-0.5 space-y-0.5 border-t border-current/20 pt-0.5 opacity-80">
-                    {buildSchedule(pe.event).map((item, i) => (
-                      <div key={i} className="flex gap-1 tabular-nums">
-                        <span>{item.time}</span>
-                        <span className="truncate font-normal">{item.label}</span>
-                      </div>
-                    ))}
-                  </div>
-                  {assignments[pe.event.id] && (
-                    <div className="mt-0.5 border-t border-current/20 pt-0.5">
-                      <RosteredStaff assignment={assignments[pe.event.id]} />
-                    </div>
-                  )}
-                </button>
-              ))}
-            </div>
+              positionedEvents={layout[day]}
+              assignments={assignments}
+              onSelect={setSelectedId}
+            />
           ))}
         </div>
       </div>
