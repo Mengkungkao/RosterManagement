@@ -35,11 +35,11 @@ export default function RootLayout({
               href="/"
               className="font-semibold text-zinc-900 dark:text-zinc-50"
             >
-              Roster Availability
+              Roster Management
             </Link>
             <nav className="flex gap-4 text-sm text-zinc-500 dark:text-zinc-400">
               <Link href="/" className="hover:text-zinc-900 dark:hover:text-zinc-50">
-                Submit
+                Submit Availability
               </Link>
               <Link
                 href="/admin"
