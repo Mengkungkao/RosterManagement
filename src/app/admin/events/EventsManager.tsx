@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { EventPhase, EventRecord } from "@/lib/events";
+import type { Eventaction, EventRecord } from "@/lib/events";
 
 type Message = { type: "success" | "error"; text: string } | null;
 
@@ -12,7 +12,7 @@ const EMPTY_FORM = {
   endTime: "",
   location: "",
   notes: "",
-  phases: [] as EventPhase[],
+  actions: [] as Eventaction[],
 };
 
 export default function EventsManager() {
@@ -52,7 +52,7 @@ export default function EventsManager() {
       endTime: event.endTime,
       location: event.location,
       notes: event.notes,
-      phases: event.phases,
+      actions: event.actions,
     });
   }
 
@@ -61,22 +61,22 @@ export default function EventsManager() {
     setForm(EMPTY_FORM);
   }
 
-  function addPhase() {
+  function addaction() {
     setForm({
       ...form,
-      phases: [...form.phases, { label: "", time: "" }],
+      actions: [...form.actions, { label: "", time: "" }],
     });
   }
 
-  function updatePhase(index: number, field: keyof EventPhase, value: string) {
+  function updateaction(index: number, field: keyof Eventaction, value: string) {
     setForm({
       ...form,
-      phases: form.phases.map((p, i) => (i === index ? { ...p, [field]: value } : p)),
+      actions: form.actions.map((p, i) => (i === index ? { ...p, [field]: value } : p)),
     });
   }
 
-  function removePhase(index: number) {
-    setForm({ ...form, phases: form.phases.filter((_, i) => i !== index) });
+  function removeaction(index: number) {
+    setForm({ ...form, actions: form.actions.filter((_, i) => i !== index) });
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -164,7 +164,7 @@ export default function EventsManager() {
               type="date"
               value={form.date}
               onChange={(e) => setForm({ ...form, date: e.target.value })}
-              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+              className="mt-1 w-max rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
             />
           </div>
           <div className="flex gap-2">
@@ -176,7 +176,7 @@ export default function EventsManager() {
                 type="time"
                 value={form.startTime}
                 onChange={(e) => setForm({ ...form, startTime: e.target.value })}
-                className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+                className="mt-1 w-max rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
               />
             </div>
             <div className="flex-1">
@@ -187,13 +187,13 @@ export default function EventsManager() {
                 type="time"
                 value={form.endTime}
                 onChange={(e) => setForm({ ...form, endTime: e.target.value })}
-                className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+                className="mt-1 w-max rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
               />
             </div>
           </div>
           <div>
             <label className="block text-sm text-zinc-600 dark:text-zinc-400">
-              Location (optional)
+              Location
             </label>
             <input
               type="text"
@@ -217,38 +217,38 @@ export default function EventsManager() {
           <div>
             <div className="flex items-center justify-between">
               <label className="block text-sm text-zinc-600 dark:text-zinc-400">
-                Phases (optional)
+                actions (optional)
               </label>
               <button
                 type="button"
-                onClick={addPhase}
+                onClick={addaction}
                 className="text-sm text-zinc-600 underline hover:no-underline dark:text-zinc-400"
               >
-                + Add phase
+                + Add action
               </button>
             </div>
-            {form.phases.length > 0 && (
+            {form.actions.length > 0 && (
               <div className="mt-2 space-y-2">
-                {form.phases.map((phase, index) => (
+                {form.actions.map((action, index) => (
                   <div key={index} className="flex gap-2">
                     <input
                       type="time"
-                      value={phase.time}
-                      onChange={(e) => updatePhase(index, "time", e.target.value)}
-                      className="w-28 rounded-lg border border-zinc-300 px-2 py-1.5 text-sm text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+                      value={action.time}
+                      onChange={(e) => updateaction(index, "time", e.target.value)}
+                      className="w-max rounded-lg border border-zinc-300 px-2 py-1.5 text-sm text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
                     />
                     <input
                       type="text"
-                      placeholder={`Phase ${index + 1} e.g. Entree serve`}
-                      value={phase.label}
-                      onChange={(e) => updatePhase(index, "label", e.target.value)}
+                      placeholder={`Activity ${index + 1} e.g. Entree serve`}
+                      value={action.label}
+                      onChange={(e) => updateaction(index, "label", e.target.value)}
                       className="flex-1 rounded-lg border border-zinc-300 px-2 py-1.5 text-sm text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
                     />
                     <button
                       type="button"
-                      onClick={() => removePhase(index)}
+                      onClick={() => removeaction(index)}
                       className="px-2 text-zinc-400 hover:text-red-600 dark:hover:text-red-400"
-                      aria-label="Remove phase"
+                      aria-label="Remove action"
                     >
                       ✕
                     </button>
@@ -325,14 +325,14 @@ export default function EventsManager() {
                 >
                   <td className="px-4 py-3 align-top font-medium text-zinc-800 dark:text-zinc-200">
                     {event.name}
-                    {event.phases.length > 0 && (
+                    {event.actions.length > 0 && (
                       <ul className="mt-1 space-y-0.5 text-xs font-normal text-zinc-500 dark:text-zinc-400">
-                        {event.phases.map((phase, i) => (
+                        {event.actions.map((action, i) => (
                           <li key={i}>
-                            {phase.time && (
-                              <span className="tabular-nums">{phase.time} </span>
+                            {action.time && (
+                              <span className="tabular-nums">{action.time} </span>
                             )}
-                            {phase.label}
+                            {action.label}
                           </li>
                         ))}
                       </ul>

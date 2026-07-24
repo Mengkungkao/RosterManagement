@@ -9,16 +9,16 @@ const HEADER = [
   "Start Time",
   "End Time",
   "Location",
-  "Phases",
+  "actions",
   "Notes",
   "ID",
 ];
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-const PHASE_LINE_PATTERN = /^(?:([01]\d|2[0-3]):([0-5]\d)\s+)?(.+)$/;
+const action_LINE_PATTERN = /^(?:([01]\d|2[0-3]):([0-5]\d)\s+)?(.+)$/;
 
-export interface EventPhase {
+export interface Eventaction {
   label: string;
-  time: string; // "" if not set — the phase is treated as starting with the event
+  time: string; // "" if not set — the action is treated as starting with the event
 }
 
 export interface EventRecord {
@@ -29,7 +29,7 @@ export interface EventRecord {
   endTime: string; // HH:MM
   location: string;
   notes: string;
-  phases: EventPhase[];
+  actions: Eventaction[];
 }
 
 export type EventInput = Omit<EventRecord, "id">;
@@ -44,29 +44,29 @@ function validateInput(input: EventInput): string | null {
   if (!TIME_PATTERN.test(input.startTime) || !TIME_PATTERN.test(input.endTime)) {
     return "Start and end time must be in HH:MM format";
   }
-  for (const phase of input.phases) {
-    if (!phase.label.trim()) return "Each phase needs a label";
-    if (phase.time && !TIME_PATTERN.test(phase.time)) {
-      return "Phase times must be in HH:MM format";
+  for (const action of input.actions) {
+    if (!action.label.trim()) return "Each action needs a label";
+    if (action.time && !TIME_PATTERN.test(action.time)) {
+      return "action times must be in HH:MM format";
     }
   }
   return null;
 }
 
-function formatPhasesCell(phases: EventPhase[]): string {
-  return phases
+function formatactionsCell(actions: Eventaction[]): string {
+  return actions
     .filter((p) => p.label.trim())
     .map((p) => (p.time ? `${p.time} ${p.label.trim()}` : p.label.trim()))
     .join("\n");
 }
 
-function parsePhasesCell(cell: string): EventPhase[] {
+function parseactionsCell(cell: string): Eventaction[] {
   return cell
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line) => {
-      const match = line.match(PHASE_LINE_PATTERN);
+      const match = line.match(action_LINE_PATTERN);
       if (!match) return { label: line, time: "" };
       const [, hour, minute, label] = match;
       return { label, time: hour ? `${hour}:${minute}` : "" };
@@ -81,7 +81,7 @@ function toRow(no: number, event: EventRecord): (string | number)[] {
     event.startTime,
     event.endTime,
     event.location,
-    formatPhasesCell(event.phases),
+    formatactionsCell(event.actions),
     event.notes,
     event.id,
   ];
@@ -119,7 +119,7 @@ async function readRows(): Promise<EventRecord[]> {
         startTime: String(r[3] || ""),
         endTime: String(r[4] || ""),
         location: String(r[5] || ""),
-        phases: parsePhasesCell(String(r[6] || "")),
+        actions: parseactionsCell(String(r[6] || "")),
         notes: String(r[7] || ""),
         id,
       };
@@ -184,25 +184,25 @@ export async function deleteEvent(id: string): Promise<void> {
   await writeAll(events.filter((e) => e.id !== id));
 }
 
-function parsePhasesInput(value: unknown): EventPhase[] | null {
+function parseactionsInput(value: unknown): Eventaction[] | null {
   if (value === undefined) return [];
   if (!Array.isArray(value)) return null;
 
-  const phases: EventPhase[] = [];
+  const actions: Eventaction[] = [];
   for (const item of value) {
     if (typeof item !== "object" || item === null) return null;
     const { label, time } = item as Record<string, unknown>;
     if (typeof label !== "string") return null;
     if (time !== undefined && typeof time !== "string") return null;
     if (!label.trim()) continue;
-    phases.push({ label: label.trim(), time: (time as string | undefined)?.trim() || "" });
+    actions.push({ label: label.trim(), time: (time as string | undefined)?.trim() || "" });
   }
-  return phases;
+  return actions;
 }
 
 export function parseEventInput(body: unknown): EventInput | null {
   if (typeof body !== "object" || body === null) return null;
-  const { name, date, startTime, endTime, location, notes, phases } =
+  const { name, date, startTime, endTime, location, notes, actions } =
     body as Record<string, unknown>;
 
   if (
@@ -214,8 +214,8 @@ export function parseEventInput(body: unknown): EventInput | null {
     return null;
   }
 
-  const parsedPhases = parsePhasesInput(phases);
-  if (parsedPhases === null) return null;
+  const parsedactions = parseactionsInput(actions);
+  if (parsedactions === null) return null;
 
   return {
     name: name.trim(),
@@ -224,6 +224,6 @@ export function parseEventInput(body: unknown): EventInput | null {
     endTime: endTime.trim(),
     location: typeof location === "string" ? location.trim() : "",
     notes: typeof notes === "string" ? notes.trim() : "",
-    phases: parsedPhases,
+    actions: parsedactions,
   };
 }

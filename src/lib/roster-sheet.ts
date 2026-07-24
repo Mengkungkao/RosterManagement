@@ -30,9 +30,9 @@ function formatDisplayDate(dateStr: string): string {
 function formatEventSummary(event: EventRecord): string {
   const lines = [`${event.name} ${event.startTime}-${event.endTime}`];
   if (event.location) lines.push(event.location);
-  if (event.phases.length > 0) {
+  if (event.actions.length > 0) {
     lines.push(
-      event.phases.map((p) => (p.time ? `${p.label} ${p.time}` : p.label)).join(", ")
+      event.actions.map((p) => (p.time ? `${p.label} ${p.time}` : p.label)).join(", ")
     );
   }
   if (event.notes) lines.push(event.notes);

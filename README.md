@@ -10,22 +10,22 @@ Sheet, so there's no database to manage — the sheet *is* the database.
 - **Admin → Availability** (`/admin`) — password-protected table of every staff
   member's availability for the week, read live from the sheet.
 - **Admin → Events** (`/admin/events`) — add, edit, and delete planned events (name,
-  date, start/end time, location, notes), each with optional **phases** — timed
-  milestones within the event, e.g. "18:30 Entree serve", "19:00 Main start". Phases
+  date, start/end time, location, notes), each with optional **actions** — timed
+  milestones within the event, e.g. "18:30 Entree serve", "19:00 Main start". actions
   are just labels for a moment in time; leave the time blank to mean "at the start of
   the event".
 - **Admin → Roster Match** (`/admin/roster`) — a weekly grid: days (Mon–Sun) across
   the top, hours (00:00–23:00, Melbourne time) down the side. Each event renders as
   one continuous, colour-coded block (not repeated per hour); events that overlap in
   time are placed side by side instead of stacked. Each block shows a heading (event
-  name + location) and its phases with their times. Click a block to open its detail
+  name + location) and its actions with their times. Click a block to open its detail
   panel:
   - **Staff working {day}** — everyone available that day, with their own submitted
     hours as their shift. There's no headcount to fill — if someone's available on a
     day that has an event, they're on the list.
   - **Setup / prep** — staff available in a configurable window (default 1h) before
     the event starts.
-  - **During the event** — broken into segments by the event's phases (or one segment
+  - **During the event** — broken into segments by the event's actions (or one segment
     for the whole event if it has none), each showing who's available for that part.
   - **Closing / pack-down** — staff available in a configurable window (default 1h)
     after the event ends.
@@ -113,10 +113,10 @@ forgotten password. This column is never sent to the admin dashboard; only a
 `hasPassword` flag is.
 
 **Events tab** — one row per event:
-`No | Event Name | Date | Start Time | End Time | Location | Notes | Phases | ID`.
+`No | Event Name | Date | Start Time | End Time | Location | Notes | actions | ID`.
 Managed entirely from `/admin/events`; the `ID` column is an internal key used for
-editing and deleting — leave it alone if you edit the sheet directly. Each phase is
-stored on its own line within the `Phases` cell as `HH:MM Label` (or just `Label` if
+editing and deleting — leave it alone if you edit the sheet directly. Each action is
+stored on its own line within the `actions` cell as `HH:MM Label` (or just `Label` if
 no time was set).
 
 **Roster tab** — a printable weekly grid, written by **Save roster to Google
@@ -125,7 +125,7 @@ Sheets**:
   by your events).
 - Row 2: `Name | Monday | Tuesday | ... | Sunday`.
 - Row 3: the calendar date under each day that has an event.
-- Row 4 (`Events`): a summary of that day's events (name, time, location, phases),
+- Row 4 (`Events`): a summary of that day's events (name, time, location, actions),
   one cell per day, multiple events stacked with a blank line between them.
 - `Closing Sets` / `Mid-shift Sets`: blank rows left for you to fill in by hand.
 - Then one row per staff member, with their submitted hours in each day that has an

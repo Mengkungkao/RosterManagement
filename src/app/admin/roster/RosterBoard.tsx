@@ -91,10 +91,10 @@ function buildSegments(event: EventRecord): Segment[] {
   if (end <= start) end += 1440; // overnight event
 
   const breakpoints = [{ time: start, label: "Start" }];
-  for (const phase of event.phases) {
-    let time = phase.time ? toMinutes(phase.time) : start;
+  for (const action of event.actions) {
+    let time = action.time ? toMinutes(action.time) : start;
     if (time < start) time += 1440;
-    if (time > start && time < end) breakpoints.push({ time, label: phase.label });
+    if (time > start && time < end) breakpoints.push({ time, label: action.label });
   }
   breakpoints.sort((a, b) => a.time - b.time);
 
@@ -188,9 +188,9 @@ function EventBlock({
   onSelect: () => void;
 }) {
   const duration = pe.endMin - pe.startMin;
-  // Sorted chronologically, untimed phases (no set time — "at the start of
+  // Sorted chronologically, untimed actions (no set time — "at the start of
   // the event") first, so the list always reads top-to-bottom in order.
-  const sortedPhases = [...pe.event.phases].sort((a, b) => {
+  const sortedactions = [...pe.event.actions].sort((a, b) => {
     const aTime = a.time ? toMinutes(a.time) : pe.startMin;
     const bTime = b.time ? toMinutes(b.time) : pe.startMin;
     return aTime - bTime;
@@ -204,7 +204,7 @@ function EventBlock({
       style={{
         top: `${(pe.startMin / 1440) * 100}%`,
         // No fixed height: the card grows to fit however much it's showing
-        // (name, location, phases) instead of clipping to the event's time
+        // (name, location, actions) instead of clipping to the event's time
         // span. The time span still sets a *minimum*, so a long event never
         // looks shorter than it actually runs.
         minHeight: `max(${MIN_CARD_HEIGHT}px, ${Math.max((duration / 1440) * 100, MIN_BLOCK_PERCENT)}%)`,
@@ -225,12 +225,12 @@ function EventBlock({
         {pe.event.location && <div className="opacity-80">{pe.event.location}</div>}
       </div>
 
-      {sortedPhases.length > 0 && (
+      {sortedactions.length > 0 && (
         <div className="min-h-0 flex-1 space-y-0.5 overflow-hidden px-1.5 pt-0.5 pb-1 opacity-90">
-          {sortedPhases.map((phase, i) => (
+          {sortedactions.map((action, i) => (
             <div key={i} className="flex gap-1 truncate">
-              {phase.time && <span className="font-semibold tabular-nums">{phase.time}</span>}
-              <span className="truncate">{phase.label}</span>
+              {action.time && <span className="font-semibold tabular-nums">{action.time}</span>}
+              <span className="truncate">{action.label}</span>
             </div>
           ))}
         </div>
