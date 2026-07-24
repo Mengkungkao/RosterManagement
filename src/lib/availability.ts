@@ -40,3 +40,13 @@ export function describeDay(day: DayAvailability): string {
   if (day.status === "custom") return `${day.startTime}–${day.endTime}`;
   return "Unavailable";
 }
+
+export function summarizeWeek(week: WeekAvailability): string {
+  const statuses = DAYS.map((day) => week[day].status);
+  const availableDays = statuses.filter((s) => s !== "unavailable").length;
+  if (availableDays === 0) return "Unavailable";
+  if (availableDays === 7 && statuses.every((s) => s === "available_all_day")) {
+    return "Fully available";
+  }
+  return "Partially available";
+}

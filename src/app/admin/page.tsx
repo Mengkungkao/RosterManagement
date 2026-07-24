@@ -26,6 +26,16 @@ function formatUpdatedAt(iso: string) {
   }
 }
 
+function statusBadgeClasses(status: string) {
+  if (status === "Fully available") {
+    return "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300";
+  }
+  if (status === "Partially available") {
+    return "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300";
+  }
+  return "bg-zinc-100 text-zinc-500 dark:bg-zinc-900 dark:text-zinc-500";
+}
+
 export default async function AdminPage() {
   const cookieStore = await cookies();
   const sessionCookie = cookieStore.get(ADMIN_COOKIE_NAME)?.value;
@@ -75,8 +85,14 @@ export default async function AdminPage() {
             <table className="w-full min-w-[900px] border-collapse text-sm">
               <thead>
                 <tr className="border-b border-zinc-200 text-left dark:border-zinc-800">
+                  <th className="px-4 py-3 font-medium text-zinc-600 dark:text-zinc-400">
+                    No
+                  </th>
                   <th className="sticky left-0 z-10 bg-white px-4 py-3 font-medium text-zinc-600 dark:bg-zinc-950 dark:text-zinc-400">
-                    Staff
+                    Name
+                  </th>
+                  <th className="px-4 py-3 font-medium text-zinc-600 dark:text-zinc-400">
+                    Status
                   </th>
                   {DAYS.map((day) => (
                     <th
@@ -92,13 +108,23 @@ export default async function AdminPage() {
                 </tr>
               </thead>
               <tbody>
-                {staff.map((person) => (
+                {staff.map((person, index) => (
                   <tr
                     key={person.staffName}
                     className="border-b border-zinc-100 last:border-0 dark:border-zinc-900"
                   >
+                    <td className="px-4 py-3 whitespace-nowrap text-zinc-500 dark:text-zinc-400">
+                      {index + 1}
+                    </td>
                     <td className="sticky left-0 z-10 whitespace-nowrap bg-white px-4 py-3 font-medium text-zinc-800 dark:bg-zinc-950 dark:text-zinc-200">
                       {person.staffName}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium whitespace-nowrap ${statusBadgeClasses(person.status)}`}
+                      >
+                        {person.status}
+                      </span>
                     </td>
                     {DAYS.map((day) => {
                       const d = person.week[day];

@@ -1,10 +1,13 @@
 import { google } from "googleapis";
-import { DAYS, Day, WeekAvailability, emptyWeek } from "./availability";
+import { DAYS, WeekAvailability, emptyWeek, summarizeWeek } from "./availability";
 
-const HEADER = ["Staff Name", "Day", "Status", "Start Time", "End Time", "Updated At"];
+const FIXED_HEADERS = ["No", "Name", "Status", "Last Updated"];
+const HEADER = [...FIXED_HEADERS, ...DAYS];
+const FIRST_DAY_COLUMN = FIXED_HEADERS.length; // 0-based index of Monday's column
 
 export interface StaffAvailability {
   staffName: string;
+  status: string;
   week: WeekAvailability;
   updatedAt: string;
 }
@@ -38,76 +41,75 @@ async function getSheetsClient() {
   return google.sheets({ version: "v4", auth: getAuth() });
 }
 
-interface RawRow {
-  staffName: string;
-  day: Day;
-  status: string;
-  startTime: string;
-  endTime: string;
-  updatedAt: string;
+function formatDayCell(day: WeekAvailability[keyof WeekAvailability]): string {
+  if (day.status === "available_all_day") return "All day";
+  if (day.status === "custom") return `${day.startTime}-${day.endTime}`;
+  return "Unavailable";
 }
 
-async function readRawRows(): Promise<RawRow[]> {
+function parseDayCell(cell: string): WeekAvailability[keyof WeekAvailability] {
+  const trimmed = cell.trim();
+  if (trimmed.toLowerCase() === "all day") {
+    return { status: "available_all_day", startTime: "", endTime: "" };
+  }
+  const match = trimmed.match(
+    /^([01]\d|2[0-3]):([0-5]\d)\s*-\s*([01]\d|2[0-3]):([0-5]\d)$/
+  );
+  if (match) {
+    return {
+      status: "custom",
+      startTime: `${match[1]}:${match[2]}`,
+      endTime: `${match[3]}:${match[4]}`,
+    };
+  }
+  return { status: "unavailable", startTime: "", endTime: "" };
+}
+
+async function readRows(): Promise<StaffAvailability[]> {
   const sheets = await getSheetsClient();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: getSheetId(),
-    range: `${getSheetName()}!A2:F`,
+    range: `${getSheetName()}!A2:${String.fromCharCode(65 + HEADER.length - 1)}`,
   });
   const rows = res.data.values || [];
+
   return rows
-    .filter((r) => r[0] && r[1])
-    .map((r) => ({
-      staffName: String(r[0]),
-      day: String(r[1]) as Day,
-      status: String(r[2] || "unavailable"),
-      startTime: String(r[3] || ""),
-      endTime: String(r[4] || ""),
-      updatedAt: String(r[5] || ""),
-    }));
-}
-
-function groupByStaff(rows: RawRow[]): StaffAvailability[] {
-  const byStaff = new Map<string, RawRow[]>();
-  for (const row of rows) {
-    const key = row.staffName.trim();
-    if (!byStaff.has(key)) byStaff.set(key, []);
-    byStaff.get(key)!.push(row);
-  }
-
-  return Array.from(byStaff.entries())
-    .map(([staffName, staffRows]) => {
+    .filter((r) => r[1])
+    .map((r) => {
       const week = emptyWeek();
-      let updatedAt = "";
-      for (const row of staffRows) {
-        if (!DAYS.includes(row.day)) continue;
-        week[row.day] = {
-          status:
-            row.status === "available_all_day" || row.status === "custom"
-              ? row.status
-              : "unavailable",
-          startTime: row.startTime,
-          endTime: row.endTime,
-        };
-        if (row.updatedAt > updatedAt) updatedAt = row.updatedAt;
-      }
-      return { staffName, week, updatedAt };
+      DAYS.forEach((day, i) => {
+        week[day] = parseDayCell(String(r[FIRST_DAY_COLUMN + i] ?? ""));
+      });
+      return {
+        staffName: String(r[1]),
+        status: String(r[2] || summarizeWeek(week)),
+        updatedAt: String(r[3] || ""),
+        week,
+      };
     })
     .sort((a, b) => a.staffName.localeCompare(b.staffName));
 }
 
+function toRow(no: number, staff: StaffAvailability): (string | number)[] {
+  return [
+    no,
+    staff.staffName,
+    staff.status,
+    staff.updatedAt,
+    ...DAYS.map((day) => formatDayCell(staff.week[day])),
+  ];
+}
+
 export async function readAllAvailability(): Promise<StaffAvailability[]> {
-  return groupByStaff(await readRawRows());
+  return readRows();
 }
 
 export async function readStaffAvailability(
   name: string
 ): Promise<StaffAvailability | null> {
   const normalized = name.trim().toLowerCase();
-  const rows = (await readRawRows()).filter(
-    (r) => r.staffName.trim().toLowerCase() === normalized
-  );
-  if (rows.length === 0) return null;
-  return groupByStaff(rows)[0];
+  const rows = await readRows();
+  return rows.find((r) => r.staffName.trim().toLowerCase() === normalized) ?? null;
 }
 
 export async function saveStaffAvailability(
@@ -118,39 +120,22 @@ export async function saveStaffAvailability(
   const normalized = staffName.toLowerCase();
   const now = new Date().toISOString();
 
-  const others = (await readRawRows()).filter(
+  const others = (await readRows()).filter(
     (r) => r.staffName.trim().toLowerCase() !== normalized
   );
 
-  const mine: RawRow[] = DAYS.map((day) => {
-    const d = week[day];
-    return {
-      staffName,
-      day,
-      status: d.status,
-      startTime: d.status === "custom" ? d.startTime : "",
-      endTime: d.status === "custom" ? d.endTime : "",
-      updatedAt: now,
-    };
-  });
+  const mine: StaffAvailability = {
+    staffName,
+    status: summarizeWeek(week),
+    updatedAt: now,
+    week,
+  };
 
-  const merged = [...others, ...mine].sort((a, b) => {
-    const staffCompare = a.staffName.localeCompare(b.staffName);
-    if (staffCompare !== 0) return staffCompare;
-    return DAYS.indexOf(a.day) - DAYS.indexOf(b.day);
-  });
+  const merged = [...others, mine].sort((a, b) =>
+    a.staffName.localeCompare(b.staffName)
+  );
 
-  const values = [
-    HEADER,
-    ...merged.map((r) => [
-      r.staffName,
-      r.day,
-      r.status,
-      r.startTime,
-      r.endTime,
-      r.updatedAt,
-    ]),
-  ];
+  const values = [HEADER, ...merged.map((r, i) => toRow(i + 1, r))];
 
   const sheets = await getSheetsClient();
   const sheetId = getSheetId();
