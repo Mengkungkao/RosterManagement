@@ -10,6 +10,7 @@ const EMPTY_FORM = {
   date: "",
   startTime: "",
   endTime: "",
+  staffNeeded: 1,
   location: "",
   notes: "",
   phases: [] as EventPhase[],
@@ -50,6 +51,7 @@ export default function EventsManager() {
       date: event.date,
       startTime: event.startTime,
       endTime: event.endTime,
+      staffNeeded: event.staffNeeded,
       location: event.location,
       notes: event.notes,
       phases: event.phases,
@@ -193,6 +195,22 @@ export default function EventsManager() {
           </div>
           <div>
             <label className="block text-sm text-zinc-600 dark:text-zinc-400">
+              Staff needed
+            </label>
+            <input
+              type="number"
+              min={0}
+              max={200}
+              step={1}
+              value={form.staffNeeded}
+              onChange={(e) =>
+                setForm({ ...form, staffNeeded: Math.max(0, Number(e.target.value) || 0) })
+              }
+              className="mt-1 w-24 rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-zinc-600 dark:text-zinc-400">
               Location (optional)
             </label>
             <input
@@ -312,6 +330,9 @@ export default function EventsManager() {
                   Time
                 </th>
                 <th className="px-4 py-3 font-medium text-zinc-600 dark:text-zinc-400">
+                  Needed
+                </th>
+                <th className="px-4 py-3 font-medium text-zinc-600 dark:text-zinc-400">
                   Location
                 </th>
                 <th className="px-4 py-3 font-medium text-zinc-600 dark:text-zinc-400" />
@@ -343,6 +364,9 @@ export default function EventsManager() {
                   </td>
                   <td className="px-4 py-3 align-top whitespace-nowrap text-zinc-600 dark:text-zinc-400">
                     {event.startTime}–{event.endTime}
+                  </td>
+                  <td className="px-4 py-3 align-top whitespace-nowrap text-zinc-600 dark:text-zinc-400">
+                    {event.staffNeeded}
                   </td>
                   <td className="px-4 py-3 align-top text-zinc-600 dark:text-zinc-400">
                     {event.location || "—"}

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import type { EventRecord } from "@/lib/events";
 import type { StaffAvailability } from "@/lib/sheets";
+import type { RosterAssignment } from "@/lib/roster-assignment";
 import { DAYS } from "@/lib/availability";
 import {
   buildWeekLayout,
@@ -16,6 +17,11 @@ import {
 interface Props {
   events: EventRecord[];
   staff: StaffAvailability[];
+  initialAssignments: RosterAssignment[];
+}
+
+function byEventId(assignments: RosterAssignment[]): Record<string, RosterAssignment> {
+  return Object.fromEntries(assignments.map((a) => [a.eventId, a]));
 }
 
 const ROW_HEIGHT = 48; // px per hour
@@ -82,6 +88,34 @@ function buildSegments(event: EventRecord): Segment[] {
   }));
 }
 
+function buildSchedule(event: EventRecord): { time: string; label: string }[] {
+  const segments = buildSegments(event);
+  if (segments.length === 0) return [];
+  return [
+    ...segments.map((seg) => ({ time: formatMinutes(seg.start), label: seg.label })),
+    { time: formatMinutes(segments[segments.length - 1].end), label: "End" },
+  ];
+}
+
+function RosteredStaff({ assignment }: { assignment: RosterAssignment }) {
+  if (assignment.staffNeeded === 0) return null;
+  return (
+    <div className="mt-0.5 space-y-0.5">
+      {assignment.assigned.map((person, i) => (
+        <div key={i} className="truncate">
+          ✓ {person.staffName}
+          {person.coverage === "partial" && " (partial)"}
+        </div>
+      ))}
+      {assignment.shortfall > 0 && (
+        <div className="font-semibold text-red-700 dark:text-red-300">
+          Short {assignment.shortfall}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function StaffList({ items }: { items: WindowAvailability[] }) {
   if (items.length === 0) {
     return (
@@ -109,13 +143,48 @@ function StaffList({ items }: { items: WindowAvailability[] }) {
   );
 }
 
-export default function RosterBoard({ events, staff }: Props) {
+export default function RosterBoard({ events, staff, initialAssignments }: Props) {
   const layout = useMemo(() => buildWeekLayout(events), [events]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [prepHours, setPrepHours] = useState(1);
   const [closingHours, setClosingHours] = useState(1);
+  const [assignments, setAssignments] = useState<Record<string, RosterAssignment>>(() =>
+    byEventId(initialAssignments)
+  );
+  const [generating, setGenerating] = useState(false);
+  const [generateMessage, setGenerateMessage] = useState<
+    { type: "success" | "error"; text: string } | null
+  >(null);
+
+  async function handleGenerate() {
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(
+        "Auto-assign the whole week's roster now? This overwrites any previously saved roster in Google Sheets."
+      )
+    ) {
+      return;
+    }
+    setGenerating(true);
+    setGenerateMessage(null);
+    try {
+      const res = await fetch("/api/admin/roster/generate", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to generate roster");
+      setAssignments(byEventId(data.assignments));
+      setGenerateMessage({ type: "success", text: "Roster generated and saved to Google Sheets." });
+    } catch (err) {
+      setGenerateMessage({
+        type: "error",
+        text: err instanceof Error ? err.message : "Failed to generate roster",
+      });
+    } finally {
+      setGenerating(false);
+    }
+  }
 
   const selectedEvent = events.find((e) => e.id === selectedId) ?? null;
+  const selectedAssignment = selectedId ? assignments[selectedId] : undefined;
 
   const details = useMemo(() => {
     if (!selectedEvent) return null;
@@ -138,10 +207,45 @@ export default function RosterBoard({ events, staff }: Props) {
     };
   }, [selectedEvent, staff, prepHours, closingHours]);
 
+  const assignedCount = Object.keys(assignments).length;
+  const filledCount = Object.values(assignments).filter((a) => a.shortfall === 0).length;
+
   return (
     <>
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+        <div className="text-sm text-zinc-600 dark:text-zinc-400">
+          {assignedCount > 0 ? (
+            <>
+              Roster saved: <span className="font-medium text-zinc-900 dark:text-zinc-50">{filledCount}</span> of{" "}
+              {assignedCount} events fully staffed.
+            </>
+          ) : (
+            "No roster generated yet."
+          )}
+          {generateMessage && (
+            <span
+              className={`ml-2 ${
+                generateMessage.type === "success"
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : "text-red-600 dark:text-red-400"
+              }`}
+            >
+              {generateMessage.text}
+            </span>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={handleGenerate}
+          disabled={generating}
+          className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+        >
+          {generating ? "Assigning…" : "Auto-assign roster"}
+        </button>
+      </div>
+
       <div
-        className="mt-6 overflow-auto rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950"
+        className="mt-4 overflow-auto rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950"
         style={{ maxHeight: "75vh" }}
       >
         <div
@@ -204,18 +308,21 @@ export default function RosterBoard({ events, staff }: Props) {
                     width: `calc(${100 / pe.trackCount}% - 4px)`,
                   }}
                 >
-                  <div className="font-medium">{pe.event.name}</div>
+                  <div className="font-semibold">{pe.event.name}</div>
                   {pe.event.location && (
                     <div className="opacity-80">{pe.event.location}</div>
                   )}
-                  {pe.event.phases.length > 0 && (
-                    <div className="mt-0.5 space-y-0.5 opacity-80">
-                      {pe.event.phases.map((phase, i) => (
-                        <div key={i}>
-                          {phase.time && `${phase.time} `}
-                          {phase.label}
-                        </div>
-                      ))}
+                  <div className="mt-0.5 space-y-0.5 border-t border-current/20 pt-0.5 opacity-80">
+                    {buildSchedule(pe.event).map((item, i) => (
+                      <div key={i} className="flex gap-1 tabular-nums">
+                        <span>{item.time}</span>
+                        <span className="truncate font-normal">{item.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {assignments[pe.event.id] && (
+                    <div className="mt-0.5 border-t border-current/20 pt-0.5">
+                      <RosteredStaff assignment={assignments[pe.event.id]} />
                     </div>
                   )}
                 </button>
@@ -254,6 +361,36 @@ export default function RosterBoard({ events, staff }: Props) {
                 ✕
               </button>
             </div>
+
+            <section className="mt-5">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                  Rostered staff
+                </h3>
+                {selectedAssignment && (
+                  <span className="text-xs text-zinc-400 dark:text-zinc-500">
+                    Needed {selectedAssignment.staffNeeded}
+                  </span>
+                )}
+              </div>
+              {selectedAssignment ? (
+                <>
+                  <StaffList items={selectedAssignment.assigned} />
+                  {selectedAssignment.shortfall > 0 && (
+                    <p className="mt-1 text-xs font-medium text-red-600 dark:text-red-400">
+                      Short by {selectedAssignment.shortfall}.
+                    </p>
+                  )}
+                  <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">
+                    Generated {selectedAssignment.generatedAt}
+                  </p>
+                </>
+              ) : (
+                <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">
+                  Not yet rostered — run Auto-assign roster.
+                </p>
+              )}
+            </section>
 
             <section className="mt-5">
               <div className="flex items-center justify-between gap-2">

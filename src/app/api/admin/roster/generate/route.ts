@@ -1,0 +1,27 @@
+import { NextResponse } from "next/server";
+import { isAdminRequest } from "@/lib/admin-auth";
+import { listEvents } from "@/lib/events";
+import { readAllAvailability } from "@/lib/sheets";
+import { generateRoster } from "@/lib/roster-assignment";
+import { saveRosterAssignments } from "@/lib/roster-sheet";
+
+export const dynamic = "force-dynamic";
+
+export async function POST() {
+  if (!(await isAdminRequest())) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    const [events, staff] = await Promise.all([listEvents(), readAllAvailability()]);
+    const assignments = generateRoster(events, staff);
+    await saveRosterAssignments(events, assignments);
+    return NextResponse.json({ assignments });
+  } catch (err) {
+    console.error("Failed to generate roster", err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Failed to generate roster" },
+      { status: 500 }
+    );
+  }
+}

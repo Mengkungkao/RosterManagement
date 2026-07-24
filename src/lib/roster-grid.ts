@@ -38,7 +38,7 @@ function toSegments(start: number, end: number): [number, number][] {
       ];
 }
 
-function overlaps(aStart: number, aEnd: number, bStart: number, bEnd: number) {
+export function overlaps(aStart: number, aEnd: number, bStart: number, bEnd: number) {
   const segA = toSegments(aStart, aEnd);
   const segB = toSegments(bStart, bEnd);
   return segA.some(([s1, e1]) => segB.some(([s2, e2]) => s1 < e2 && s2 < e1));

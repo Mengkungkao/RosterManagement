@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { ADMIN_COOKIE_NAME, isAdminSessionValid } from "@/lib/admin-auth";
 import { readAllAvailability, StaffAvailability } from "@/lib/sheets";
 import { listEvents, EventRecord } from "@/lib/events";
+import { listRosterAssignments } from "@/lib/roster-sheet";
+import { RosterAssignment } from "@/lib/roster-assignment";
 import AdminControls from "../AdminControls";
 import AdminNav from "../AdminNav";
 import RosterBoard from "./RosterBoard";
@@ -25,6 +27,15 @@ export default async function RosterMatchPage() {
     loadError = err instanceof Error ? err.message : "Failed to load roster match";
   }
 
+  // The Roster tab may not exist yet until "Auto-assign" is run for the
+  // first time — treat that as "no roster saved" rather than a page error.
+  let assignments: RosterAssignment[] = [];
+  try {
+    assignments = await listRosterAssignments();
+  } catch {
+    assignments = [];
+  }
+
   return (
     <div className="flex flex-1 flex-col bg-zinc-50 px-4 py-10 dark:bg-black sm:py-16">
       <div className="mx-auto w-full max-w-7xl">
@@ -35,7 +46,8 @@ export default async function RosterMatchPage() {
             </h1>
             <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
               Events by day and hour, in Melbourne time. Click an event to see who&apos;s
-              available for setup, the event itself, and pack-down.
+              available for setup, the event itself, and pack-down — or auto-assign the
+              whole week&apos;s roster below.
             </p>
           </div>
           <AdminControls />
@@ -54,7 +66,9 @@ export default async function RosterMatchPage() {
           </div>
         )}
 
-        {!loadError && events.length > 0 && <RosterBoard events={events} staff={staff} />}
+        {!loadError && events.length > 0 && (
+          <RosterBoard events={events} staff={staff} initialAssignments={assignments} />
+        )}
       </div>
     </div>
   );
