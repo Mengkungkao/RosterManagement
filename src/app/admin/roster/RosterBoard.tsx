@@ -24,9 +24,9 @@ function byEventId(assignments: RosterAssignment[]): Record<string, RosterAssign
   return Object.fromEntries(assignments.map((a) => [a.eventId, a]));
 }
 
-const ROW_HEIGHT = 48; // px per hour
+const ROW_HEIGHT = 80; // px per hour
 const TOTAL_HEIGHT = ROW_HEIGHT * 24;
-const MIN_BLOCK_PERCENT = (ROW_HEIGHT / 2 / TOTAL_HEIGHT) * 100;
+const MIN_CARD_HEIGHT = 130; // px — guarantees short events stay readable
 
 interface Segment {
   label: string;
@@ -86,15 +86,6 @@ function buildSegments(event: EventRecord): Segment[] {
     start: bp.time,
     end: i + 1 < merged.length ? merged[i + 1].time : end,
   }));
-}
-
-function buildSchedule(event: EventRecord): { time: string; label: string }[] {
-  const segments = buildSegments(event);
-  if (segments.length === 0) return [];
-  return [
-    ...segments.map((seg) => ({ time: formatMinutes(seg.start), label: seg.label })),
-    { time: formatMinutes(segments[segments.length - 1].end), label: "End" },
-  ];
 }
 
 function RosteredStaff({ assignment }: { assignment: RosterAssignment }) {
@@ -251,8 +242,8 @@ export default function RosterBoard({ events, staff, initialAssignments }: Props
         <div
           className="grid"
           style={{
-            gridTemplateColumns: "56px repeat(7, minmax(140px, 1fr))",
-            minWidth: "1080px",
+            gridTemplateColumns: "64px repeat(7, minmax(210px, 1fr))",
+            minWidth: "1540px",
           }}
         >
           <div className="sticky top-0 left-0 z-30 border-b border-zinc-200 bg-white px-2 py-2 text-xs font-medium text-zinc-600 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400">
@@ -295,38 +286,63 @@ export default function RosterBoard({ events, staff, initialAssignments }: Props
                   style={{ top: hour * ROW_HEIGHT }}
                 />
               ))}
-              {layout[day].map((pe) => (
-                <button
-                  key={pe.event.id}
-                  type="button"
-                  onClick={() => setSelectedId(pe.event.id)}
-                  className={`absolute overflow-hidden rounded px-1.5 py-1 text-left text-[11px] leading-tight transition-opacity hover:opacity-80 ${colorForEvent(pe.event.id)}`}
-                  style={{
-                    top: `${(pe.startMin / 1440) * 100}%`,
-                    height: `${Math.max(((pe.endMin - pe.startMin) / 1440) * 100, MIN_BLOCK_PERCENT)}%`,
-                    left: `calc(${(pe.track / pe.trackCount) * 100}% + 2px)`,
-                    width: `calc(${100 / pe.trackCount}% - 4px)`,
-                  }}
-                >
-                  <div className="font-semibold">{pe.event.name}</div>
-                  {pe.event.location && (
-                    <div className="opacity-80">{pe.event.location}</div>
-                  )}
-                  <div className="mt-0.5 space-y-0.5 border-t border-current/20 pt-0.5 opacity-80">
-                    {buildSchedule(pe.event).map((item, i) => (
-                      <div key={i} className="flex gap-1 tabular-nums">
-                        <span>{item.time}</span>
-                        <span className="truncate font-normal">{item.label}</span>
-                      </div>
-                    ))}
-                  </div>
-                  {assignments[pe.event.id] && (
-                    <div className="mt-0.5 border-t border-current/20 pt-0.5">
-                      <RosteredStaff assignment={assignments[pe.event.id]} />
+              {layout[day].map((pe) => {
+                const duration = pe.endMin - pe.startMin;
+                const timedPhases = pe.event.phases.filter((p) => p.time);
+                const untimedPhases = pe.event.phases.filter((p) => !p.time);
+                return (
+                  <button
+                    key={pe.event.id}
+                    type="button"
+                    onClick={() => setSelectedId(pe.event.id)}
+                    className={`absolute overflow-hidden rounded-lg text-left text-sm leading-snug shadow-sm ring-1 ring-black/5 transition-opacity hover:opacity-90 ${colorForEvent(pe.event.id)}`}
+                    style={{
+                      top: `${(pe.startMin / 1440) * 100}%`,
+                      height: `${(duration / 1440) * 100}%`,
+                      minHeight: MIN_CARD_HEIGHT,
+                      left: `calc(${(pe.track / pe.trackCount) * 100}% + 3px)`,
+                      width: `calc(${100 / pe.trackCount}% - 6px)`,
+                    }}
+                  >
+                    <div className="px-3 py-2">
+                      <div className="text-sm font-bold">{pe.event.name}</div>
+                      {pe.event.location && (
+                        <div className="mt-0.5 text-xs opacity-80">{pe.event.location}</div>
+                      )}
+                      {untimedPhases.length > 0 && (
+                        <div className="mt-1 space-y-0.5 text-xs opacity-80">
+                          {untimedPhases.map((phase, i) => (
+                            <div key={i} className="truncate">
+                              {phase.label}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {assignments[pe.event.id] && (
+                        <div className="mt-1.5 text-xs">
+                          <RosteredStaff assignment={assignments[pe.event.id]} />
+                        </div>
+                      )}
                     </div>
-                  )}
-                </button>
-              ))}
+
+                    {/* Phase markers, positioned to line up with their actual time within the block */}
+                    {timedPhases.map((phase, i) => {
+                      const offset = ((toMinutes(phase.time) - pe.startMin) / duration) * 100;
+                      if (offset <= 0 || offset >= 100) return null;
+                      return (
+                        <div
+                          key={i}
+                          className="absolute inset-x-0 flex items-center gap-1.5 border-t border-current/40 bg-black/5 px-3 py-1 text-xs dark:bg-white/10"
+                          style={{ top: `${offset}%` }}
+                        >
+                          <span className="font-bold tabular-nums">{phase.time}</span>
+                          <span className="truncate font-medium">{phase.label}</span>
+                        </div>
+                      );
+                    })}
+                  </button>
+                );
+              })}
             </div>
           ))}
         </div>
