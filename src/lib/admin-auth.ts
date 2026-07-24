@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "crypto";
+import { cookies } from "next/headers";
 
 export const ADMIN_COOKIE_NAME = "roster_admin_session";
 
@@ -28,4 +29,9 @@ export function isAdminSessionValid(cookieValue: string | undefined): boolean {
   const b = Buffer.from(expected);
   if (a.length !== b.length) return false;
   return timingSafeEqual(a, b);
+}
+
+export async function isAdminRequest(): Promise<boolean> {
+  const cookieStore = await cookies();
+  return isAdminSessionValid(cookieStore.get(ADMIN_COOKIE_NAME)?.value);
 }

@@ -1,5 +1,10 @@
-import { google } from "googleapis";
 import { DAYS, WeekAvailability, emptyWeek, summarizeWeek } from "./availability";
+import {
+  columnLetter,
+  formatMelbourneTimestamp,
+  getSheetId,
+  getSheetsClient,
+} from "./google-client";
 
 const LEADING_HEADERS = ["No", "Name", "Status"];
 const HEADER = [...LEADING_HEADERS, ...DAYS, "Last Updated"];
@@ -15,47 +20,6 @@ export interface StaffAvailability {
 
 function getSheetName() {
   return process.env.GOOGLE_SHEET_TAB || "Availability";
-}
-
-function getSheetId() {
-  const id = process.env.GOOGLE_SHEET_ID;
-  if (!id) throw new Error("GOOGLE_SHEET_ID is not set");
-  return id;
-}
-
-function getAuth() {
-  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-  const key = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n");
-  if (!email || !key) {
-    throw new Error(
-      "GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_PRIVATE_KEY must be set"
-    );
-  }
-  return new google.auth.JWT({
-    email,
-    key,
-    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
-  });
-}
-
-async function getSheetsClient() {
-  return google.sheets({ version: "v4", auth: getAuth() });
-}
-
-function formatMelbourneTimestamp(date: Date): string {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Australia/Melbourne",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(date);
-
-  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
-  return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")}:${get("second")}`;
 }
 
 function formatDayCell(day: WeekAvailability[keyof WeekAvailability]): string {
@@ -86,7 +50,7 @@ async function readRows(): Promise<StaffAvailability[]> {
   const sheets = await getSheetsClient();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: getSheetId(),
-    range: `${getSheetName()}!A2:${String.fromCharCode(65 + HEADER.length - 1)}`,
+    range: `${getSheetName()}!A2:${columnLetter(HEADER.length - 1)}`,
   });
   const rows = res.data.values || [];
 

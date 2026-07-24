@@ -4,6 +4,7 @@ import { ADMIN_COOKIE_NAME, isAdminSessionValid } from "@/lib/admin-auth";
 import { readAllAvailability, StaffAvailability } from "@/lib/sheets";
 import { DAYS, DayStatus } from "@/lib/availability";
 import AdminControls from "./AdminControls";
+import AdminNav from "./AdminNav";
 
 export const dynamic = "force-dynamic";
 
@@ -62,6 +63,7 @@ export default async function AdminPage() {
           </div>
           <AdminControls />
         </div>
+        <AdminNav />
 
         {loadError && (
           <div className="mt-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
