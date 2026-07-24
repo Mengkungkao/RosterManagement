@@ -28,8 +28,8 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">
-        <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+      <body className="flex min-h-full flex-col md:h-screen md:overflow-hidden">
+        <header className="shrink-0 border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
           <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
             <Link
               href="/"
@@ -50,7 +50,7 @@ export default function RootLayout({
             </nav>
           </div>
         </header>
-        <div className="flex flex-1 flex-col">{children}</div>
+        <div className="flex flex-1 flex-col md:min-h-0 md:overflow-y-auto">{children}</div>
       </body>
     </html>
   );

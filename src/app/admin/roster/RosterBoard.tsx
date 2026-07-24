@@ -25,12 +25,38 @@ function byEventId(assignments: RosterAssignment[]): Record<string, RosterAssign
   return Object.fromEntries(assignments.map((a) => [a.eventId, a]));
 }
 
-const ROW_HEIGHT = 80; // px per hour
-const TOTAL_HEIGHT = ROW_HEIGHT * 24;
-const MIN_BLOCK_PERCENT = (ROW_HEIGHT / 2 / TOTAL_HEIGHT) * 100;
-const DEFAULT_COL_WIDTH = 210; // px
-const MIN_COL_WIDTH = 140;
+// The grid fills whatever height its container has (see the desktop grid's
+// flex-1/min-h-0 chain) rather than a fixed pixel row height, so the whole
+// day fits on screen without a vertical scrollbar. Every row position below
+// is a percentage of that container height.
+const HOURS_IN_DAY = 24;
+const MIN_BLOCK_PERCENT = 100 / HOURS_IN_DAY / 2; // half an hour tall, minimum
+const MIN_CARD_HEIGHT = 22; // px floor so a card is never literally unreadable
+
+// Phone view keeps the old fixed-height, scroll-if-needed behaviour — there's
+// only one column, so there's no room to save by shrinking rows.
+const MOBILE_ROW_HEIGHT = 64; // px per hour
+const MOBILE_TOTAL_HEIGHT = MOBILE_ROW_HEIGHT * HOURS_IN_DAY;
+
+// Column width: auto-sized from how busy each day is, with manual drag as an override.
+const EMPTY_DAY_COL_WIDTH = 110; // px — no events at all
+const SINGLE_EVENT_COL_WIDTH = 150; // px — exactly one event, nothing overlapping
+const BUSY_COL_WIDTH = 210; // px — baseline once a day has multiple events
+const PER_TRACK_WIDTH = 170; // px needed per side-by-side overlapping event
+const PER_EVENT_GROWTH = 22; // px added per extra event beyond two, for readability
+const MIN_COL_WIDTH = 100;
 const MAX_COL_WIDTH = 520;
+
+function computeAutoColumnWidth(positionedEvents: PositionedEvent[]): number {
+  const eventCount = positionedEvents.length;
+  if (eventCount === 0) return EMPTY_DAY_COL_WIDTH;
+  if (eventCount === 1) return SINGLE_EVENT_COL_WIDTH;
+
+  const trackCount = positionedEvents.reduce((max, pe) => Math.max(max, pe.trackCount), 1);
+  const widthForOverlap = trackCount * PER_TRACK_WIDTH;
+  const widthForDensity = BUSY_COL_WIDTH + (eventCount - 2) * PER_EVENT_GROWTH;
+  return Math.min(MAX_COL_WIDTH, Math.max(widthForOverlap, widthForDensity));
+}
 
 interface Segment {
   label: string;
@@ -179,31 +205,37 @@ function EventBlock({
       style={{
         top: `${(pe.startMin / 1440) * 100}%`,
         height: `${Math.max((duration / 1440) * 100, MIN_BLOCK_PERCENT)}%`,
+        minHeight: MIN_CARD_HEIGHT,
         left: `calc(${(pe.track / pe.trackCount) * 100}% + 2px)`,
         width: `calc(${100 / pe.trackCount}% - 4px)`,
       }}
     >
-      <div className="flex flex-wrap items-baseline gap-x-1.5">
-        <span className="font-semibold">{pe.event.name}</span>
-        <span className="tabular-nums opacity-80">
-          {formatShortDate(pe.event.date)} · {pe.event.startTime}–{pe.event.endTime}
-        </span>
+      {/* relative + z-10: absolutely-positioned phase markers below would
+          otherwise always paint above this static content, burying the
+          heading whenever an early phase lands near the top of the card. */}
+      <div className="relative z-10">
+        <div className="flex flex-wrap items-baseline gap-x-1.5">
+          <span className="font-semibold">{pe.event.name}</span>
+          <span className="tabular-nums opacity-80">
+            {formatShortDate(pe.event.date)} · {pe.event.startTime}–{pe.event.endTime}
+          </span>
+        </div>
+        {pe.event.location && <div className="opacity-80">{pe.event.location}</div>}
+        {untimedPhases.length > 0 && (
+          <div className="mt-0.5 space-y-0.5 opacity-80">
+            {untimedPhases.map((phase, i) => (
+              <div key={i} className="truncate">
+                {phase.label}
+              </div>
+            ))}
+          </div>
+        )}
+        {assignment && (
+          <div className="mt-0.5 border-t border-current/20 pt-0.5">
+            <RosteredStaff assignment={assignment} />
+          </div>
+        )}
       </div>
-      {pe.event.location && <div className="opacity-80">{pe.event.location}</div>}
-      {untimedPhases.length > 0 && (
-        <div className="mt-0.5 space-y-0.5 opacity-80">
-          {untimedPhases.map((phase, i) => (
-            <div key={i} className="truncate">
-              {phase.label}
-            </div>
-          ))}
-        </div>
-      )}
-      {assignment && (
-        <div className="mt-0.5 border-t border-current/20 pt-0.5">
-          <RosteredStaff assignment={assignment} />
-        </div>
-      )}
 
       {/* Phase markers, positioned to line up with their actual (day, time) coordinate on the grid */}
       {timedPhases.map((phase, i) => {
@@ -227,11 +259,11 @@ function EventBlock({
 function HourGridlines() {
   return (
     <>
-      {Array.from({ length: 24 }, (_, hour) => (
+      {Array.from({ length: HOURS_IN_DAY }, (_, hour) => (
         <div
           key={hour}
           className="absolute inset-x-0 border-t border-zinc-100 dark:border-zinc-900"
-          style={{ top: hour * ROW_HEIGHT }}
+          style={{ top: `${(hour / HOURS_IN_DAY) * 100}%` }}
         />
       ))}
     </>
@@ -248,10 +280,7 @@ function DayColumn({
   onSelect: (id: string) => void;
 }) {
   return (
-    <div
-      className="relative border-l border-zinc-100 dark:border-zinc-900"
-      style={{ height: TOTAL_HEIGHT }}
-    >
+    <div className="relative h-full border-l border-zinc-100 dark:border-zinc-900">
       <HourGridlines />
       {positionedEvents.map((pe) => (
         <EventBlock
@@ -267,15 +296,15 @@ function DayColumn({
 
 function TimeGutter() {
   return (
-    <div
-      className="sticky left-0 z-10 bg-white dark:bg-zinc-950"
-      style={{ height: TOTAL_HEIGHT }}
-    >
-      {Array.from({ length: 24 }, (_, hour) => (
+    <div className="sticky left-0 z-10 h-full bg-white dark:bg-zinc-950">
+      {Array.from({ length: HOURS_IN_DAY }, (_, hour) => (
         <div
           key={hour}
           className="absolute inset-x-0 border-t border-zinc-100 px-2 text-[11px] text-zinc-400 dark:border-zinc-900 dark:text-zinc-500"
-          style={{ top: hour * ROW_HEIGHT, height: ROW_HEIGHT }}
+          style={{
+            top: `${(hour / HOURS_IN_DAY) * 100}%`,
+            height: `${100 / HOURS_IN_DAY}%`,
+          }}
         >
           {formatHour(hour)}
         </div>
@@ -287,15 +316,21 @@ function TimeGutter() {
 function ResizeHandle({
   width,
   onResize,
+  onReset,
 }: {
   width: number;
   onResize: (newWidth: number) => void;
+  onReset: () => void;
 }) {
   const dragState = useRef<{ startX: number; startWidth: number } | null>(null);
 
   function handlePointerDown(e: React.PointerEvent<HTMLDivElement>) {
     e.stopPropagation();
-    dragState.current = { startX: e.clientX, startWidth: width };
+    // Measure the column's actual rendered width rather than trusting the
+    // `width` prop, since an auto-sized column is laid out as a fluid `fr`
+    // track — its real pixel width depends on the container, not the prop.
+    const renderedWidth = e.currentTarget.parentElement?.getBoundingClientRect().width;
+    dragState.current = { startX: e.clientX, startWidth: renderedWidth ?? width };
     e.currentTarget.setPointerCapture(e.pointerId);
   }
 
@@ -319,6 +354,8 @@ function ResizeHandle({
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
+      onDoubleClick={onReset}
+      title="Drag to resize · double-click to auto-fit"
       className="absolute top-0 right-0 z-40 h-full w-2.5 cursor-col-resize touch-none select-none hover:bg-zinc-300 active:bg-zinc-400 dark:hover:bg-zinc-700"
     />
   );
@@ -328,7 +365,32 @@ export default function RosterBoard({ events, staff, initialAssignments }: Props
   const layout = useMemo(() => buildWeekLayout(events), [events]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedDay, setSelectedDay] = useState<Day>(DAYS[0]);
-  const [colWidths, setColWidths] = useState<number[]>(() => DAYS.map(() => DEFAULT_COL_WIDTH));
+
+  // Columns auto-size to how busy each day is; a manual drag pins that day's
+  // width until reset (double-click the handle), so it won't jump around as
+  // events change elsewhere in the week.
+  const [manualColWidths, setManualColWidths] = useState<(number | null)[]>(() =>
+    DAYS.map(() => null)
+  );
+  const autoColWidths = useMemo(
+    () => DAYS.map((day) => computeAutoColumnWidth(layout[day])),
+    [layout]
+  );
+  const colWidths = useMemo(
+    () => DAYS.map((_, i) => manualColWidths[i] ?? autoColWidths[i]),
+    [manualColWidths, autoColWidths]
+  );
+  // Manually-resized days get a fixed pixel track; everything else is a
+  // proportional `fr` track sized by the same auto-width weights, so the
+  // columns always add up to exactly the available width — no horizontal
+  // scrollbar for the default (non-dragged) case.
+  const colTracks = useMemo(
+    () =>
+      DAYS.map((_, i) =>
+        manualColWidths[i] !== null ? `${manualColWidths[i]}px` : `${autoColWidths[i]}fr`
+      ),
+    [manualColWidths, autoColWidths]
+  );
   const [prepHours, setPrepHours] = useState(1);
   const [closingHours, setClosingHours] = useState(1);
   const [assignments, setAssignments] = useState<Record<string, RosterAssignment>>(() =>
@@ -449,7 +511,7 @@ export default function RosterBoard({ events, staff, initialAssignments }: Props
           className="mt-3 overflow-y-auto rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950"
           style={{ maxHeight: "70vh" }}
         >
-          <div className="flex">
+          <div className="flex" style={{ height: MOBILE_TOTAL_HEIGHT }}>
             <TimeGutter />
             <div className="flex-1">
               <DayColumn
@@ -462,15 +524,13 @@ export default function RosterBoard({ events, staff, initialAssignments }: Props
         </div>
       </div>
 
-      {/* Desktop/tablet-landscape: full week, with drag-to-resize day columns. */}
-      <div
-        className="mt-4 hidden overflow-auto rounded-2xl border border-zinc-200 bg-white shadow-sm md:block dark:border-zinc-800 dark:bg-zinc-950"
-        style={{ maxHeight: "75vh" }}
-      >
+      {/* Desktop/tablet-landscape: full week, sized to fit the screen with no scrollbar. */}
+      <div className="mt-4 hidden overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm md:flex md:min-h-0 md:flex-1 md:flex-col dark:border-zinc-800 dark:bg-zinc-950">
         <div
-          className="grid"
+          className="grid min-h-0 flex-1 overflow-auto"
           style={{
-            gridTemplateColumns: `56px ${colWidths.map((w) => `${w}px`).join(" ")}`,
+            gridTemplateColumns: `56px ${colTracks.join(" ")}`,
+            gridTemplateRows: "auto 1fr",
           }}
         >
           <div className="sticky top-0 left-0 z-30 border-b border-zinc-200 bg-white px-2 py-2 text-xs font-medium text-zinc-600 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400">
@@ -485,7 +545,10 @@ export default function RosterBoard({ events, staff, initialAssignments }: Props
               <ResizeHandle
                 width={colWidths[i]}
                 onResize={(newWidth) =>
-                  setColWidths((prev) => prev.map((w, wi) => (wi === i ? newWidth : w)))
+                  setManualColWidths((prev) => prev.map((w, wi) => (wi === i ? newWidth : w)))
+                }
+                onReset={() =>
+                  setManualColWidths((prev) => prev.map((w, wi) => (wi === i ? null : w)))
                 }
               />
             </div>

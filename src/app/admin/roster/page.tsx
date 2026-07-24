@@ -37,9 +37,9 @@ export default async function RosterMatchPage() {
   }
 
   return (
-    <div className="flex flex-1 flex-col bg-zinc-50 px-4 py-10 dark:bg-black sm:py-16">
-      <div className="mx-auto w-full max-w-7xl">
-        <div className="flex flex-wrap items-center justify-between gap-4">
+    <div className="flex flex-1 flex-col bg-zinc-50 px-4 py-10 dark:bg-black sm:py-16 md:min-h-0">
+      <div className="mx-auto flex w-full max-w-7xl flex-col md:min-h-0 md:flex-1">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
               Roster Match
@@ -52,16 +52,18 @@ export default async function RosterMatchPage() {
           </div>
           <AdminControls />
         </div>
-        <AdminNav />
+        <div className="shrink-0">
+          <AdminNav />
+        </div>
 
         {loadError && (
-          <div className="mt-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+          <div className="mt-6 shrink-0 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
             Couldn&apos;t load roster match: {loadError}
           </div>
         )}
 
         {!loadError && events.length === 0 && (
-          <div className="mt-6 rounded-lg border border-zinc-200 bg-white p-6 text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400">
+          <div className="mt-6 shrink-0 rounded-lg border border-zinc-200 bg-white p-6 text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400">
             No events planned yet.
           </div>
         )}
