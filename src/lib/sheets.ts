@@ -1,9 +1,10 @@
 import { google } from "googleapis";
 import { DAYS, WeekAvailability, emptyWeek, summarizeWeek } from "./availability";
 
-const FIXED_HEADERS = ["No", "Name", "Status", "Last Updated"];
-const HEADER = [...FIXED_HEADERS, ...DAYS];
-const FIRST_DAY_COLUMN = FIXED_HEADERS.length; // 0-based index of Monday's column
+const LEADING_HEADERS = ["No", "Name", "Status"];
+const HEADER = [...LEADING_HEADERS, ...DAYS, "Last Updated"];
+const FIRST_DAY_COLUMN = LEADING_HEADERS.length; // 0-based index of Monday's column
+const UPDATED_AT_COLUMN = FIRST_DAY_COLUMN + DAYS.length; // 0-based index of Last Updated
 
 export interface StaffAvailability {
   staffName: string;
@@ -39,6 +40,22 @@ function getAuth() {
 
 async function getSheetsClient() {
   return google.sheets({ version: "v4", auth: getAuth() });
+}
+
+function formatMelbourneTimestamp(date: Date): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Australia/Melbourne",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")}:${get("second")}`;
 }
 
 function formatDayCell(day: WeekAvailability[keyof WeekAvailability]): string {
@@ -83,7 +100,7 @@ async function readRows(): Promise<StaffAvailability[]> {
       return {
         staffName: String(r[1]),
         status: String(r[2] || summarizeWeek(week)),
-        updatedAt: String(r[3] || ""),
+        updatedAt: String(r[UPDATED_AT_COLUMN] || ""),
         week,
       };
     })
@@ -95,8 +112,8 @@ function toRow(no: number, staff: StaffAvailability): (string | number)[] {
     no,
     staff.staffName,
     staff.status,
-    staff.updatedAt,
     ...DAYS.map((day) => formatDayCell(staff.week[day])),
+    staff.updatedAt,
   ];
 }
 
@@ -118,7 +135,7 @@ export async function saveStaffAvailability(
 ): Promise<void> {
   const staffName = name.trim();
   const normalized = staffName.toLowerCase();
-  const now = new Date().toISOString();
+  const now = formatMelbourneTimestamp(new Date());
 
   const others = (await readRows()).filter(
     (r) => r.staffName.trim().toLowerCase() !== normalized

@@ -17,13 +17,8 @@ function badgeClasses(status: DayStatus) {
   return "bg-zinc-100 text-zinc-500 dark:bg-zinc-900 dark:text-zinc-500";
 }
 
-function formatUpdatedAt(iso: string) {
-  if (!iso) return "—";
-  try {
-    return new Date(iso).toLocaleString();
-  } catch {
-    return iso;
-  }
+function formatUpdatedAt(value: string) {
+  return value || "—";
 }
 
 function statusBadgeClasses(status: string) {
