@@ -26,7 +26,7 @@ const HOURS = 24;
 // identical before). "Reverse Deep Forest": near-black forest green at 0%,
 // deepening up to a mid green at 100% — same ramp in both themes.
 type RGB = readonly [number, number, number];
-const RAMP_FROM: RGB = [4, 40, 0]; // #04281e — near-black forest green
+const RAMP_FROM: RGB = [4, 20, 0]; // #04281e — near-black forest green
 const RAMP_TO: RGB = [52, 130, 96]; // #348260 — mid green
 const LIGHT_FROM: RGB = RAMP_FROM;
 const LIGHT_TO: RGB = RAMP_TO;
@@ -198,7 +198,7 @@ export default function AvailabilityHeatmap({ staff }: Props) {
                     const ratio = total > 0 ? cell.available.length / total : 0;
                     const isActive = active?.day === day && active?.hour === hour;
                     return (
-                      <td key={day} className="border border-zinc-100 p-0 dark:border-zinc-900">
+                      <td key={day} className="border border-zinc-100 p-0 leading-none dark:border-zinc-900">
                         <button
                           type="button"
                           onMouseEnter={() => setActive({ day, hour })}
@@ -206,7 +206,7 @@ export default function AvailabilityHeatmap({ staff }: Props) {
                           onClick={() => setActive({ day, hour })}
                           aria-label={`${day} ${formatHour(hour)}: ${cell.available.length} of ${total} available`}
                           style={cellColorVars(ratio)}
-                          className={`h-[22px] w-full bg-[var(--cell-light)] transition-shadow dark:bg-[var(--cell-dark)] ${
+                          className={`block h-[22px] w-full bg-[var(--cell-light)] transition-shadow dark:bg-[var(--cell-dark)] ${
                             isActive
                               ? "ring-2 ring-inset ring-zinc-900 dark:ring-white"
                               : "hover:ring-1 hover:ring-inset hover:ring-zinc-400 dark:hover:ring-zinc-500"
