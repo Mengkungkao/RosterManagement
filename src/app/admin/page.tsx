@@ -5,6 +5,7 @@ import { readAllAvailability, StaffAvailability } from "@/lib/sheets";
 import { DAYS, DayStatus } from "@/lib/availability";
 import AdminControls from "./AdminControls";
 import AdminNav from "./AdminNav";
+import AvailabilityHeatmap from "./AvailabilityHeatmap";
 
 export const dynamic = "force-dynamic";
 
@@ -78,75 +79,84 @@ export default async function AdminPage() {
         )}
 
         {!loadError && staff.length > 0 && (
-          <div className="mt-6 overflow-x-auto rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-            <table className="w-full min-w-[900px] border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-zinc-200 text-left dark:border-zinc-800">
-                  <th className="px-4 py-3 font-medium text-zinc-600 dark:text-zinc-400">
-                    No
-                  </th>
-                  <th className="sticky left-0 z-10 bg-white px-4 py-3 font-medium text-zinc-600 dark:bg-zinc-950 dark:text-zinc-400">
-                    Name
-                  </th>
-                  <th className="px-4 py-3 font-medium text-zinc-600 dark:text-zinc-400">
-                    Status
-                  </th>
-                  {DAYS.map((day) => (
-                    <th
-                      key={day}
-                      className="px-3 py-3 font-medium text-zinc-600 dark:text-zinc-400"
-                    >
-                      {day.slice(0, 3)}
-                    </th>
-                  ))}
-                  <th className="px-4 py-3 font-medium text-zinc-600 dark:text-zinc-400">
-                    Updated
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {staff.map((person, index) => (
-                  <tr
-                    key={person.staffName}
-                    className="border-b border-zinc-100 last:border-0 dark:border-zinc-900"
-                  >
-                    <td className="px-4 py-3 whitespace-nowrap text-zinc-500 dark:text-zinc-400">
-                      {index + 1}
-                    </td>
-                    <td className="sticky left-0 z-10 whitespace-nowrap bg-white px-4 py-3 font-medium text-zinc-800 dark:bg-zinc-950 dark:text-zinc-200">
-                      {person.staffName}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium whitespace-nowrap ${statusBadgeClasses(person.status)}`}
+          <>
+            <AvailabilityHeatmap staff={staff} />
+
+            <details className="mt-6">
+              <summary className="cursor-pointer text-sm font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50">
+                Show per-person table
+              </summary>
+              <div className="mt-3 overflow-x-auto rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+                <table className="w-full min-w-[900px] border-collapse text-sm">
+                  <thead>
+                    <tr className="border-b border-zinc-200 text-left dark:border-zinc-800">
+                      <th className="px-4 py-3 font-medium text-zinc-600 dark:text-zinc-400">
+                        No
+                      </th>
+                      <th className="sticky left-0 z-10 bg-white px-4 py-3 font-medium text-zinc-600 dark:bg-zinc-950 dark:text-zinc-400">
+                        Name
+                      </th>
+                      <th className="px-4 py-3 font-medium text-zinc-600 dark:text-zinc-400">
+                        Status
+                      </th>
+                      {DAYS.map((day) => (
+                        <th
+                          key={day}
+                          className="px-3 py-3 font-medium text-zinc-600 dark:text-zinc-400"
+                        >
+                          {day.slice(0, 3)}
+                        </th>
+                      ))}
+                      <th className="px-4 py-3 font-medium text-zinc-600 dark:text-zinc-400">
+                        Updated
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {staff.map((person, index) => (
+                      <tr
+                        key={person.staffName}
+                        className="border-b border-zinc-100 last:border-0 dark:border-zinc-900"
                       >
-                        {person.status}
-                      </span>
-                    </td>
-                    {DAYS.map((day) => {
-                      const d = person.week[day];
-                      return (
-                        <td key={day} className="px-3 py-3">
+                        <td className="px-4 py-3 whitespace-nowrap text-zinc-500 dark:text-zinc-400">
+                          {index + 1}
+                        </td>
+                        <td className="sticky left-0 z-10 whitespace-nowrap bg-white px-4 py-3 font-medium text-zinc-800 dark:bg-zinc-950 dark:text-zinc-200">
+                          {person.staffName}
+                        </td>
+                        <td className="px-4 py-3">
                           <span
-                            className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium whitespace-nowrap ${badgeClasses(d.status)}`}
+                            className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium whitespace-nowrap ${statusBadgeClasses(person.status)}`}
                           >
-                            {d.status === "available_all_day"
-                              ? "All day"
-                              : d.status === "custom"
-                                ? `${d.startTime}–${d.endTime}`
-                                : "Off"}
+                            {person.status}
                           </span>
                         </td>
-                      );
-                    })}
-                    <td className="px-4 py-3 whitespace-nowrap text-zinc-500 dark:text-zinc-400">
-                      {formatUpdatedAt(person.updatedAt)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                        {DAYS.map((day) => {
+                          const d = person.week[day];
+                          return (
+                            <td key={day} className="px-3 py-3">
+                              <span
+                                className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium whitespace-nowrap ${badgeClasses(d.status)}`}
+                              >
+                                {d.status === "available_all_day"
+                                  ? "All day"
+                                  : d.status === "custom"
+                                    ? `${d.startTime}–${d.endTime}`
+                                    : "Off"}
+                              </span>
+                            </td>
+                          );
+                        })}
+                        <td className="px-4 py-3 whitespace-nowrap text-zinc-500 dark:text-zinc-400">
+                          {formatUpdatedAt(person.updatedAt)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          </>
         )}
       </div>
     </div>

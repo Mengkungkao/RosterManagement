@@ -194,26 +194,34 @@ function EventBlock({
   onSelect: () => void;
 }) {
   const duration = pe.endMin - pe.startMin;
-  const timedPhases = pe.event.phases.filter((p) => p.time);
-  const untimedPhases = pe.event.phases.filter((p) => !p.time);
+  // Sorted chronologically, untimed phases (no set time — "at the start of
+  // the event") first, so the list always reads top-to-bottom in order.
+  const sortedPhases = [...pe.event.phases].sort((a, b) => {
+    const aTime = a.time ? toMinutes(a.time) : pe.startMin;
+    const bTime = b.time ? toMinutes(b.time) : pe.startMin;
+    return aTime - bTime;
+  });
 
   return (
     <button
       type="button"
       onClick={onSelect}
-      className={`absolute overflow-hidden rounded px-1.5 py-1 text-left text-[11px] leading-tight transition-opacity hover:opacity-80 ${colorForEvent(pe.event.id)}`}
+      className={`absolute flex flex-col overflow-hidden rounded text-left text-[11px] leading-tight transition-opacity hover:opacity-80 ${colorForEvent(pe.event.id)}`}
       style={{
         top: `${(pe.startMin / 1440) * 100}%`,
-        height: `${Math.max((duration / 1440) * 100, MIN_BLOCK_PERCENT)}%`,
-        minHeight: MIN_CARD_HEIGHT,
+        // No fixed height: the card grows to fit however much it's showing
+        // (name, location, phases, roster) instead of clipping to the
+        // event's time span. The time span still sets a *minimum*, so a
+        // long event never looks shorter than it actually runs.
+        minHeight: `max(${MIN_CARD_HEIGHT}px, ${Math.max((duration / 1440) * 100, MIN_BLOCK_PERCENT)}%)`,
         left: `calc(${(pe.track / pe.trackCount) * 100}% + 2px)`,
         width: `calc(${100 / pe.trackCount}% - 4px)`,
       }}
     >
-      {/* relative + z-10: absolutely-positioned phase markers below would
-          otherwise always paint above this static content, burying the
-          heading whenever an early phase lands near the top of the card. */}
-      <div className="relative z-10">
+      {/* Header always renders first — a real flex-column child, not an
+          absolutely-positioned overlay — so nothing can ever paint over it
+          or reorder it ahead of the event name. */}
+      <div className="shrink-0 px-1.5 pt-1">
         <div className="flex flex-wrap items-baseline gap-x-1.5">
           <span className="font-semibold">{pe.event.name}</span>
           <span className="tabular-nums opacity-80">
@@ -221,37 +229,23 @@ function EventBlock({
           </span>
         </div>
         {pe.event.location && <div className="opacity-80">{pe.event.location}</div>}
-        {untimedPhases.length > 0 && (
-          <div className="mt-0.5 space-y-0.5 opacity-80">
-            {untimedPhases.map((phase, i) => (
-              <div key={i} className="truncate">
-                {phase.label}
-              </div>
-            ))}
-          </div>
-        )}
-        {assignment && (
-          <div className="mt-0.5 border-t border-current/20 pt-0.5">
-            <RosteredStaff assignment={assignment} />
-          </div>
-        )}
       </div>
 
-      {/* Phase markers, positioned to line up with their actual (day, time) coordinate on the grid */}
-      {timedPhases.map((phase, i) => {
-        const offset = ((toMinutes(phase.time) - pe.startMin) / duration) * 100;
-        if (offset <= 0 || offset >= 100) return null;
-        return (
-          <div
-            key={i}
-            className="absolute inset-x-0 flex items-center gap-1 border-t border-current/40 bg-black/5 px-1.5 py-0.5 dark:bg-white/10"
-            style={{ top: `${offset}%` }}
-          >
-            <span className="font-semibold tabular-nums">{phase.time}</span>
-            <span className="truncate">{phase.label}</span>
-          </div>
-        );
-      })}
+      {(sortedPhases.length > 0 || assignment) && (
+        <div className="min-h-0 flex-1 space-y-0.5 overflow-hidden px-1.5 pt-0.5 pb-1 opacity-90">
+          {sortedPhases.map((phase, i) => (
+            <div key={i} className="flex gap-1 truncate">
+              {phase.time && <span className="font-semibold tabular-nums">{phase.time}</span>}
+              <span className="truncate">{phase.label}</span>
+            </div>
+          ))}
+          {assignment && (
+            <div className="border-t border-current/20 pt-0.5">
+              <RosteredStaff assignment={assignment} />
+            </div>
+          )}
+        </div>
+      )}
     </button>
   );
 }

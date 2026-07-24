@@ -45,7 +45,7 @@ export default async function RosterMatchPage() {
               Roster Match
             </h1>
             <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-              Events by day and hour, in Melbourne time. Click an event to see who&apos;s
+              Events by day and hour, in a week time. Click an event to see who&apos;s
               available for setup, the event itself, and pack-down — or auto-assign the
               whole week&apos;s roster below.
             </p>
