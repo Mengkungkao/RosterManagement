@@ -15,9 +15,17 @@ Sheet, so there's no database to manage — the sheet *is* the database.
   are just labels for a moment in time; leave the time blank to mean "at the start of
   the event".
 - **Admin → Roster Match** (`/admin/roster`) — a weekly grid: days (Mon–Sun) across
-  the top, hours (00:00–23:00, Melbourne time) down the side. Each cell highlights
-  events happening in that hour (with the active phase label, if any) alongside the
-  staff who are available to work it, computed from their weekly availability.
+  the top, hours (00:00–23:00, Melbourne time) down the side. Cells show only the
+  events happening in that hour (name + location, colour-coded, with the active phase
+  label if any) — no staff clutter. Click an event to open its availability panel:
+  - **Setup / prep** — staff available in a configurable window (default 1h) before
+    the event starts.
+  - **During the event** — broken into segments by the event's phases (or one segment
+    for the whole event if it has none), each showing who's available for that part.
+  - **Closing / pack-down** — staff available in a configurable window (default 1h)
+    after the event ends.
+
+  Staff are badged **full** (available the whole segment) or **partial**.
 
 ## 1. Create the Google Sheet
 
@@ -89,8 +97,8 @@ stored on its own line within the `Phases` cell as `HH:MM Label` (or just `Label
 no time was set).
 
 **Roster Match** (`/admin/roster`) doesn't store anything — it reads both tabs live,
-converts each event's date to a day of week (in Melbourne time), and for every hour of
-that day checks which events overlap it and which staff are available, accounting for
-custom hours and overnight ranges. Because events are matched by day of week rather
-than exact date, events on the same weekday in different weeks share the same grid
-row — the grid represents a typical week, not a specific one.
+converts each event's date to a day of week (in Melbourne time), and matches events to
+hours (for the grid) or arbitrary windows (for the prep/segment/closing panel),
+accounting for custom hours and overnight ranges. Because events are matched by day of
+week rather than exact date, events on the same weekday in different weeks share the
+same grid row — the grid represents a typical week, not a specific one.
