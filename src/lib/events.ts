@@ -103,10 +103,17 @@ async function readRows(): Promise<EventRecord[]> {
   });
   const rows = res.data.values || [];
 
-  return sortEvents(
-    rows
-      .filter((r) => r[1] && r[8])
-      .map((r) => ({
+  // A blank ID cell, or one copy-pasted from another row directly in Sheets,
+  // would otherwise collide with another event's id — assign a fresh one so
+  // every event stays distinct. The fix is persisted on the next save.
+  const seenIds = new Set<string>();
+  const events = rows
+    .filter((r) => r[1])
+    .map((r) => {
+      let id = String(r[8] || "");
+      if (!id || seenIds.has(id)) id = randomUUID();
+      seenIds.add(id);
+      return {
         name: String(r[1]),
         date: String(r[2] || ""),
         startTime: String(r[3] || ""),
@@ -114,9 +121,11 @@ async function readRows(): Promise<EventRecord[]> {
         location: String(r[5] || ""),
         notes: String(r[6] || ""),
         phases: parsePhasesCell(String(r[7] || "")),
-        id: String(r[8]),
-      }))
-  );
+        id,
+      };
+    });
+
+  return sortEvents(events);
 }
 
 async function writeAll(events: EventRecord[]): Promise<void> {
