@@ -32,16 +32,7 @@ export async function POST(req: NextRequest) {
     }
 
     const date = getMelbourneDateString();
-    const events = (await listEvents())
-      .filter((event) => event.date === date)
-      .map((event) => ({
-        name: event.name,
-        startTime: event.startTime,
-        endTime: event.endTime,
-        location: event.location,
-        notes: event.notes,
-        actions: event.actions,
-      }));
+    const events = (await listEvents()).filter((event) => event.date === date);
 
     return NextResponse.json({ ok: true, date, events });
   } catch (err) {

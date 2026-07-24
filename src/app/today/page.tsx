@@ -1,23 +1,101 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import type { Eventaction } from "@/lib/events";
+import { useEffect, useMemo, useState } from "react";
+import type { EventRecord } from "@/lib/events";
+import { colorForEvent } from "@/lib/event-colors";
+import {
+  layoutDayEvents,
+  mod1440,
+  toMinutes,
+  type PositionedEvent,
+} from "@/lib/roster-grid";
 import StaffAccessGate, { StaffAccessProps } from "../StaffAccessGate";
 
-interface TodayEvent {
-  name: string;
-  startTime: string;
-  endTime: string;
-  location: string;
-  notes: string;
-  actions: Eventaction[];
+const ROW_HEIGHT_PX = 64; // px per hour in the time grid
+const MIN_CARD_HEIGHT = 32; // px floor so a card is never literally unreadable
+
+function formatMinutes(totalMinutes: number): string {
+  const t = mod1440(totalMinutes);
+  return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
+}
+
+// The window the grid covers: from the start of the earliest event's hour to
+// the end of the latest event's hour — not a fixed 24h day — so the grid is
+// only ever as tall as today's actual events need.
+function computeWindow(positioned: PositionedEvent[]): { start: number; end: number } | null {
+  if (positioned.length === 0) return null;
+  const rawStart = Math.min(...positioned.map((p) => p.startMin));
+  const rawEnd = Math.max(...positioned.map((p) => p.endMin));
+  const start = Math.floor(rawStart / 60) * 60;
+  const end = Math.max(start + 60, Math.ceil(rawEnd / 60) * 60);
+  return { start, end };
+}
+
+function EventCard({
+  pe,
+  windowStart,
+  span,
+  containerHeight,
+}: {
+  pe: PositionedEvent;
+  windowStart: number;
+  span: number;
+  containerHeight: number;
+}) {
+  const sortedActions = [...pe.event.actions].sort((a, b) => {
+    const aTime = a.time ? toMinutes(a.time) : pe.startMin;
+    const bTime = b.time ? toMinutes(b.time) : pe.startMin;
+    return aTime - bTime;
+  });
+
+  return (
+    <div
+      className={`absolute flex flex-col overflow-hidden rounded-lg text-[11px] leading-tight ${colorForEvent(pe.event.id)}`}
+      style={{
+        top: ((pe.startMin - windowStart) / span) * containerHeight,
+        minHeight: Math.max(
+          MIN_CARD_HEIGHT,
+          ((pe.endMin - pe.startMin) / span) * containerHeight
+        ),
+        left: `calc(${(pe.track / pe.trackCount) * 100}% + 2px)`,
+        width: `calc(${100 / pe.trackCount}% - 4px)`,
+      }}
+    >
+      <div className="shrink-0 px-2 pt-1.5">
+        <div className="flex flex-wrap items-baseline gap-x-1.5">
+          <span className="font-semibold">{pe.event.name}</span>
+          <span className="tabular-nums opacity-80">
+            {pe.event.startTime}–{pe.event.endTime}
+          </span>
+        </div>
+        {pe.event.location && <div className="opacity-80">{pe.event.location}</div>}
+      </div>
+
+      {sortedActions.length > 0 && (
+        <div className="min-h-0 flex-1 space-y-0.5 px-2 pt-1 pb-1 opacity-90">
+          {sortedActions.map((action, i) => (
+            <div key={i} className="flex gap-1">
+              {action.time && <span className="font-semibold tabular-nums">{action.time}</span>}
+              <span>{action.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {pe.event.notes && (
+        <div className="shrink-0 border-t border-black/10 px-2 py-1 whitespace-pre-wrap opacity-80 dark:border-white/10">
+          {pe.event.notes}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function TodayEventsView({ name, password, reset, lock }: StaffAccessProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [date, setDate] = useState<string | null>(null);
-  const [events, setEvents] = useState<TodayEvent[]>([]);
+  const [events, setEvents] = useState<EventRecord[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -58,6 +136,9 @@ function TodayEventsView({ name, password, reset, lock }: StaffAccessProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const positioned = useMemo(() => layoutDayEvents(events), [events]);
+  const windowRange = useMemo(() => computeWindow(positioned), [positioned]);
+
   return (
     <>
       <div className="mt-6 flex items-center justify-between gap-3">
@@ -87,50 +168,51 @@ function TodayEventsView({ name, password, reset, lock }: StaffAccessProps) {
         </p>
       )}
 
-      {!loading && !error && events.length > 0 && (
-        <div className="mt-4 space-y-4">
-          {events.map((event, i) => (
-            <div
-              key={i}
-              className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/60"
-            >
-              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">
-                  {event.name}
-                </h2>
-                <span className="text-sm tabular-nums text-zinc-500 dark:text-zinc-400">
-                  {event.startTime}–{event.endTime}
-                </span>
+      {!loading && !error && windowRange && (
+        (() => {
+          const span = windowRange.end - windowRange.start;
+          const hours = span / 60;
+          const containerHeight = hours * ROW_HEIGHT_PX;
+          const hourMarks: number[] = [];
+          for (let m = windowRange.start; m <= windowRange.end; m += 60) hourMarks.push(m);
+
+          return (
+            <div className="mt-4 flex overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+              <div
+                className="relative w-14 shrink-0 border-r border-zinc-100 dark:border-zinc-900"
+                style={{ height: containerHeight }}
+              >
+                {hourMarks.map((m) => (
+                  <div
+                    key={m}
+                    className="absolute inset-x-0 px-2 text-[11px] text-zinc-400 dark:text-zinc-500"
+                    style={{ top: ((m - windowRange.start) / span) * containerHeight - 6 }}
+                  >
+                    {formatMinutes(m)}
+                  </div>
+                ))}
               </div>
-              {event.location && (
-                <p className="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
-                  {event.location}
-                </p>
-              )}
-
-              {event.actions.length > 0 && (
-                <ol className="mt-3 space-y-1.5 border-l-2 border-zinc-200 pl-3 dark:border-zinc-700">
-                  {event.actions.map((action, j) => (
-                    <li key={j} className="text-sm text-zinc-700 dark:text-zinc-300">
-                      {action.time && (
-                        <span className="mr-2 font-medium tabular-nums text-zinc-500 dark:text-zinc-400">
-                          {action.time}
-                        </span>
-                      )}
-                      {action.label}
-                    </li>
-                  ))}
-                </ol>
-              )}
-
-              {event.notes && (
-                <p className="mt-3 text-sm whitespace-pre-wrap text-zinc-600 dark:text-zinc-400">
-                  {event.notes}
-                </p>
-              )}
+              <div className="relative flex-1" style={{ height: containerHeight }}>
+                {hourMarks.map((m) => (
+                  <div
+                    key={m}
+                    className="absolute inset-x-0 border-t border-zinc-100 dark:border-zinc-900"
+                    style={{ top: ((m - windowRange.start) / span) * containerHeight }}
+                  />
+                ))}
+                {positioned.map((pe) => (
+                  <EventCard
+                    key={pe.event.id}
+                    pe={pe}
+                    windowStart={windowRange.start}
+                    span={span}
+                    containerHeight={containerHeight}
+                  />
+                ))}
+              </div>
             </div>
-          ))}
-        </div>
+          );
+        })()
       )}
     </>
   );

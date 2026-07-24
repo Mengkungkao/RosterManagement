@@ -203,29 +203,38 @@ function assignTracks(
   return positioned;
 }
 
-// Lays out events as continuous, non-overlapping blocks per weekday — one
-// block per event (not repeated per hour), with concurrent events placed in
-// side-by-side tracks rather than stacked inside the same slot.
+// Lays out a single day's events as continuous, non-overlapping blocks — one
+// block per event (not repeated per hour), with concurrent (or visually
+// colliding, see MINUTES_PER_CONTENT_LINE) events placed in side-by-side
+// tracks rather than stacked in the same slot. Shared by the weekly roster
+// grid (one call per weekday) and any other single-day view of events.
+export function layoutDayEvents(events: EventRecord[]): PositionedEvent[] {
+  const items = events.map((event) => {
+    const start = toMinutes(event.startTime);
+    const end = toMinutes(event.endTime);
+    // Overnight events are clipped to the end of this day for display; the
+    // detail panel's prep/segment/closing math still wraps correctly.
+    const clippedEnd = end <= start ? MINUTES_IN_DAY : end;
+    const contentMinutes = estimateContentLines(event) * MINUTES_PER_CONTENT_LINE;
+    const trackEnd = start + Math.max(clippedEnd - start, contentMinutes);
+    return { event, start, end: clippedEnd, trackEnd };
+  });
+  return assignTracks(items);
+}
+
+// Groups events by weekday (in Melbourne time) and lays out each day independently.
 export function buildWeekLayout(events: EventRecord[]): WeekLayout {
   const byDay = DAYS.reduce((acc, day) => {
     acc[day] = [];
     return acc;
-  }, {} as Record<Day, { event: EventRecord; start: number; end: number; trackEnd: number }[]>);
+  }, {} as Record<Day, EventRecord[]>);
 
   for (const event of events) {
-    const weekday = getMelbourneWeekday(event.date);
-    const start = toMinutes(event.startTime);
-    const end = toMinutes(event.endTime);
-    // Overnight events are clipped to the end of this weekday for display;
-    // the detail panel's prep/segment/closing math still wraps correctly.
-    const clippedEnd = end <= start ? MINUTES_IN_DAY : end;
-    const contentMinutes = estimateContentLines(event) * MINUTES_PER_CONTENT_LINE;
-    const trackEnd = start + Math.max(clippedEnd - start, contentMinutes);
-    byDay[weekday].push({ event, start, end: clippedEnd, trackEnd });
+    byDay[getMelbourneWeekday(event.date)].push(event);
   }
 
   return DAYS.reduce((layout, day) => {
-    layout[day] = assignTracks(byDay[day]);
+    layout[day] = layoutDayEvents(byDay[day]);
     return layout;
   }, {} as WeekLayout);
 }
