@@ -287,7 +287,7 @@ export default function Home() {
                 </div>
               </div>
               {week[day].status === "custom" && (
-                <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-3 dark:border-zinc-800 dark:bg-zinc-900/60">
+                <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-3 dark:border-zinc-800 dark:bg-zinc-900/60">
                   <label className="flex flex-1 basis-32 flex-col gap-1">
                     <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
                       From
@@ -296,7 +296,7 @@ export default function Home() {
                       type="time"
                       value={week[day].startTime}
                       onChange={(e) => setDayTime(day, "startTime", e.target.value)}
-                      className="w-full rounded-lg border border-zinc-300 px-2 py-1.5 text-sm text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+                      className="w-max rounded-lg border border-zinc-300 px-2 py-1.5 text-sm text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
                     />
                   </label>
                   <label className="flex flex-1 basis-32 flex-col gap-1">
@@ -307,7 +307,7 @@ export default function Home() {
                       type="time"
                       value={week[day].endTime}
                       onChange={(e) => setDayTime(day, "endTime", e.target.value)}
-                      className="w-full rounded-lg border border-zinc-300 px-2 py-1.5 text-sm text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+                      className="w-max rounded-lg border border-zinc-300 px-2 py-1.5 text-sm text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
                     />
                   </label>
                 </div>
