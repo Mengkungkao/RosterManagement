@@ -31,10 +31,26 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const date = getMelbourneDateString();
-    const events = (await listEvents()).filter((event) => event.date === date);
+    const todayDate = getMelbourneDateString();
+    const tomorrowDate = getMelbourneDateString(
+      new Date(Date.now() + 24 * 60 * 60 * 1000)
+    );
+    const allEvents = await listEvents();
 
-    return NextResponse.json({ ok: true, date, events });
+    const days = [
+      {
+        date: todayDate,
+        label: "Today",
+        events: allEvents.filter((event) => event.date === todayDate),
+      },
+      {
+        date: tomorrowDate,
+        label: "Tomorrow",
+        events: allEvents.filter((event) => event.date === tomorrowDate),
+      },
+    ];
+
+    return NextResponse.json({ ok: true, days });
   } catch (err) {
     console.error("Failed to load today's events", err);
     return NextResponse.json(

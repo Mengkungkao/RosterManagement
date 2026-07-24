@@ -61,6 +61,19 @@ export function isWithinWindow(start: number, end: number, point: number): boole
   return toSegments(start, end).some(([s, e]) => s <= point && point < e);
 }
 
+// Current time of day in Melbourne, as minutes since midnight — client-safe
+// (no server-only imports), used for the "now" indicator on a day grid.
+export function getMelbourneMinutesNow(date: Date = new Date()): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Australia/Melbourne",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "0";
+  return Number(get("hour")) * 60 + Number(get("minute"));
+}
+
 export function getMelbourneWeekday(dateStr: string): Day {
   const date = new Date(`${dateStr}T00:00:00Z`);
   const weekday = new Intl.DateTimeFormat("en-US", {
@@ -164,9 +177,14 @@ export function getAvailableStaffAt(
 // your screens, lower it if events end up side by side more than necessary.
 const MINUTES_PER_CONTENT_LINE = 35;
 
-function estimateContentLines(event: EventRecord): number {
-  return 1 + (event.location ? 1 : 0) + event.actions.length;
-}
+export type ContentLineEstimator = (event: EventRecord) => number;
+
+// Default estimate: header line + location line (if any) + one line per
+// action, since that's what the admin roster grid's card actually renders.
+// Views that render actions elsewhere (e.g. a separate activity timeline)
+// should pass their own estimator to layoutDayEvents instead.
+const estimateContentLines: ContentLineEstimator = (event) =>
+  1 + (event.location ? 1 : 0) + event.actions.length;
 
 // Assigns each of a day's events to the first side-by-side "track" that's free
 // (the classic interval-partitioning / minimum-meeting-rooms algorithm), so
@@ -208,14 +226,17 @@ function assignTracks(
 // colliding, see MINUTES_PER_CONTENT_LINE) events placed in side-by-side
 // tracks rather than stacked in the same slot. Shared by the weekly roster
 // grid (one call per weekday) and any other single-day view of events.
-export function layoutDayEvents(events: EventRecord[]): PositionedEvent[] {
+export function layoutDayEvents(
+  events: EventRecord[],
+  estimateLines: ContentLineEstimator = estimateContentLines
+): PositionedEvent[] {
   const items = events.map((event) => {
     const start = toMinutes(event.startTime);
     const end = toMinutes(event.endTime);
     // Overnight events are clipped to the end of this day for display; the
     // detail panel's prep/segment/closing math still wraps correctly.
     const clippedEnd = end <= start ? MINUTES_IN_DAY : end;
-    const contentMinutes = estimateContentLines(event) * MINUTES_PER_CONTENT_LINE;
+    const contentMinutes = estimateLines(event) * MINUTES_PER_CONTENT_LINE;
     const trackEnd = start + Math.max(clippedEnd - start, contentMinutes);
     return { event, start, end: clippedEnd, trackEnd };
   });
