@@ -15,7 +15,7 @@ export default async function AdminEventsPage() {
   }
 
   return (
-    <div className="flex flex-1 flex-col bg-zinc-50 px-4 py-10 dark:bg-black sm:py-16">
+    <div className="flex flex-1 flex-col bg-zinc-50 px-4 pt-6 pb-10 dark:bg-black sm:pt-8 sm:pb-16">
       <div className="mx-auto w-full max-w-6xl">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>

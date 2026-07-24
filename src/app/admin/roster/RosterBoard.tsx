@@ -436,9 +436,6 @@ export default function RosterBoard({ events, staff }: Props) {
     };
   }, [selectedEvent, staff, prepHours, closingHours]);
 
-  const activeDays = DAYS.filter((day) => layout[day].length > 0);
-  const totalShifts = activeDays.reduce((sum, day) => sum + dayShifts[day].length, 0);
-
   return (
     <>
       <AdminNav

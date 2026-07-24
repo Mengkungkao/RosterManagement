@@ -26,7 +26,7 @@ export default async function RosterMatchPage() {
   }
 
   return (
-    <div className="flex flex-1 flex-col bg-zinc-50 px-4 py-10 dark:bg-black sm:py-16 md:min-h-0">
+    <div className="flex flex-1 flex-col bg-zinc-50 px-4 pt-6 pb-10 dark:bg-black sm:pt-8 sm:pb-16 md:min-h-0">
       <div className="mx-auto flex w-full max-w-7xl flex-col md:min-h-0 md:flex-1">
         <div className="flex shrink-0 flex-wrap items-center justify-between gap-4">
           <div>
