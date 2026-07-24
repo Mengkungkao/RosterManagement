@@ -28,6 +28,9 @@ function byEventId(assignments: RosterAssignment[]): Record<string, RosterAssign
 const ROW_HEIGHT = 80; // px per hour
 const TOTAL_HEIGHT = ROW_HEIGHT * 24;
 const MIN_BLOCK_PERCENT = (ROW_HEIGHT / 2 / TOTAL_HEIGHT) * 100;
+const DEFAULT_COL_WIDTH = 210; // px
+const MIN_COL_WIDTH = 140;
+const MAX_COL_WIDTH = 520;
 
 interface Segment {
   label: string;
@@ -89,13 +92,24 @@ function buildSegments(event: EventRecord): Segment[] {
   }));
 }
 
-function buildSchedule(event: EventRecord): { time: string; label: string }[] {
-  const segments = buildSegments(event);
-  if (segments.length === 0) return [];
-  return [
-    ...segments.map((seg) => ({ time: formatMinutes(seg.start), label: seg.label })),
-    { time: formatMinutes(segments[segments.length - 1].end), label: "End" },
-  ];
+const MONTH_ABBR = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+function formatShortDate(dateStr: string): string {
+  const [, month, day] = dateStr.split("-").map(Number);
+  return `${day} ${MONTH_ABBR[month - 1] ?? ""}`.trim();
 }
 
 function RosteredStaff({ assignment }: { assignment: RosterAssignment }) {
@@ -456,8 +470,7 @@ export default function RosterBoard({ events, staff, initialAssignments }: Props
         <div
           className="grid"
           style={{
-            gridTemplateColumns: "56px repeat(7, minmax(140px, 1fr))",
-            minWidth: "1080px",
+            gridTemplateColumns: `56px ${colWidths.map((w) => `${w}px`).join(" ")}`,
           }}
         >
           <div className="sticky top-0 left-0 z-30 border-b border-zinc-200 bg-white px-2 py-2 text-xs font-medium text-zinc-600 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400">
@@ -483,49 +496,10 @@ export default function RosterBoard({ events, staff, initialAssignments }: Props
           {DAYS.map((day) => (
             <DayColumn
               key={day}
-              className="relative border-l border-zinc-100 dark:border-zinc-900"
-              style={{ height: TOTAL_HEIGHT }}
-            >
-              {Array.from({ length: 24 }, (_, hour) => (
-                <div
-                  key={hour}
-                  className="absolute inset-x-0 border-t border-zinc-100 dark:border-zinc-900"
-                  style={{ top: hour * ROW_HEIGHT }}
-                />
-              ))}
-              {layout[day].map((pe) => (
-                <button
-                  key={pe.event.id}
-                  type="button"
-                  onClick={() => setSelectedId(pe.event.id)}
-                  className={`absolute overflow-hidden rounded px-1.5 py-1 text-left text-[11px] leading-tight transition-opacity hover:opacity-80 ${colorForEvent(pe.event.id)}`}
-                  style={{
-                    top: `${(pe.startMin / 1440) * 100}%`,
-                    height: `${Math.max(((pe.endMin - pe.startMin) / 1440) * 100, MIN_BLOCK_PERCENT)}%`,
-                    left: `calc(${(pe.track / pe.trackCount) * 100}% + 2px)`,
-                    width: `calc(${100 / pe.trackCount}% - 4px)`,
-                  }}
-                >
-                  <div className="font-semibold">{pe.event.name}</div>
-                  {pe.event.location && (
-                    <div className="opacity-80">{pe.event.location}</div>
-                  )}
-                  <div className="mt-0.5 space-y-0.5 border-t border-current/20 pt-0.5 opacity-80">
-                    {buildSchedule(pe.event).map((item, i) => (
-                      <div key={i} className="flex gap-1 tabular-nums">
-                        <span>{item.time}</span>
-                        <span className="truncate font-normal">{item.label}</span>
-                      </div>
-                    ))}
-                  </div>
-                  {assignments[pe.event.id] && (
-                    <div className="mt-0.5 border-t border-current/20 pt-0.5">
-                      <RosteredStaff assignment={assignments[pe.event.id]} />
-                    </div>
-                  )}
-                </button>
-              ))}
-            </div>
+              positionedEvents={layout[day]}
+              assignments={assignments}
+              onSelect={setSelectedId}
+            />
           ))}
         </div>
       </div>
