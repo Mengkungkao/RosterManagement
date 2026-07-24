@@ -482,7 +482,7 @@ export default function TodayPage() {
         </h1>
         <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
           Log in with your name and password to see what&apos;s on today and
-          tomorrow — event details and the run of show, no roster.
+          tomorrow — event details and the run of show.
         </p>
 
         <StaffAccessGate>
