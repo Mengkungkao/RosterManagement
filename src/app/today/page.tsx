@@ -13,11 +13,34 @@ import {
 import StaffAccessGate, { StaffAccessProps } from "../StaffAccessGate";
 
 const ROW_HEIGHT_PX = 64; // px per hour in the time grid
-const MIN_CARD_HEIGHT = 26; // px floor so an event card is never literally unreadable
-// Extra room below the last hour row so its label (e.g. "00:00") isn't
-// clipped by the grid's overflow-hidden — doesn't affect where anything is
-// actually positioned, since that math still uses the unpadded containerHeight.
-const GRID_BOTTOM_PADDING = 16;
+// Fixed lane above the event's actual start row for its name/time/location —
+// the card extends upward into this space rather than eating into the
+// grid-aligned body below, so an activity at the event's own start time
+// (very common — an untimed action defaults to it) still lines up with the
+// real hour row instead of colliding with the header text.
+const CARD_HEADER_HEIGHT = 32;
+const CARD_BODY_BOTTOM_PADDING = 18; // room for the last activity's label to fully show
+// Room above the first hour row for that header lane to expand into — without
+// this, an event starting right at the top of the window would push its
+// header above the grid entirely, overlapping the day's column heading.
+const GRID_TOP_PADDING = CARD_HEADER_HEIGHT + 4;
+// Room below the last hour row — has to be at least CARD_BODY_BOTTOM_PADDING,
+// otherwise an event that ends exactly on the window's last hour mark would
+// still get its own last activity clipped by the grid's overflow-hidden, one
+// level up from the card's own padding.
+const GRID_BOTTOM_PADDING = CARD_BODY_BOTTOM_PADDING + 4;
+
+// Pixel offset (from the grid body's own top, padding included) for a given
+// time — the one place the window→pixel conversion happens, so every piece
+// of the grid (hour lines, labels, event cards, the now-line) agrees on it.
+function timeToPx(
+  minutes: number,
+  windowStart: number,
+  span: number,
+  containerHeight: number
+): number {
+  return ((minutes - windowStart) / span) * containerHeight + GRID_TOP_PADDING;
+}
 
 interface DayData {
   date: string;
@@ -74,39 +97,56 @@ function EventCard({
     return aTime - bTime;
   });
 
+  const pxPerMinute = containerHeight / span;
+  // Where the event's own start row falls in the shared grid — the header
+  // sits above this point, the body (and every activity in it) below it, so
+  // an activity's row always matches the same hour gridline the event blocks
+  // and other day's column already align to.
+  const rowTop = timeToPx(pe.startMin, windowStart, span, containerHeight);
+  const bodyHeight = (pe.endMin - pe.startMin) * pxPerMinute;
+
   return (
     <div
       className={`absolute flex flex-col overflow-hidden rounded text-[11px] leading-tight ${colorForEvent(pe.event.id)}`}
       style={{
-        top: ((pe.startMin - windowStart) / span) * containerHeight,
-        minHeight: Math.max(
-          MIN_CARD_HEIGHT,
-          ((pe.endMin - pe.startMin) / span) * containerHeight
-        ),
+        top: rowTop - CARD_HEADER_HEIGHT,
+        minHeight: CARD_HEADER_HEIGHT + bodyHeight + CARD_BODY_BOTTOM_PADDING,
         left: `calc(${(pe.track / pe.trackCount) * 100}% + 2px)`,
         width: `calc(${100 / pe.trackCount}% - 4px)`,
       }}
     >
       {/* Header always renders first — a real flex-column child, not an
           absolutely-positioned overlay — so nothing can ever paint over it. */}
-      <div className="shrink-0 px-1.5 pt-1">
+      <div className="shrink-0 px-1.5 pt-1" style={{ height: CARD_HEADER_HEIGHT }}>
         <div className="flex flex-wrap items-baseline gap-x-1.5">
           <span className="font-semibold">{pe.event.name}</span>
           <span className="tabular-nums opacity-80">
             {pe.event.startTime}–{pe.event.endTime}
           </span>
         </div>
-        {pe.event.location && <div className="opacity-80">{pe.event.location}</div>}
+        {pe.event.location && <div className="truncate opacity-80">{pe.event.location}</div>}
       </div>
 
       {sortedActions.length > 0 && (
-        <div className="min-h-0 flex-1 space-y-0.5 px-1.5 pt-0.5 pb-1 opacity-90">
-          {sortedActions.map((action, i) => (
-            <div key={i} className="flex gap-1 truncate">
-              {action.time && <span className="font-semibold tabular-nums">{action.time}</span>}
-              <span className="truncate">{action.label}</span>
-            </div>
-          ))}
+        // A relative box (not a stacked list) so each action can sit at the
+        // exact row matching its real time — using the same px-per-minute
+        // rate as the shared hour gridlines, not a scale local to this card —
+        // so it lines up with the grid, not just with the event's own span.
+        <div className="relative min-h-0 flex-1 px-1.5">
+          {sortedActions.map((action, i) => {
+            const actionTime = action.time ? toMinutes(action.time) : pe.startMin;
+            const top = Math.max(0, actionTime - pe.startMin) * pxPerMinute;
+            return (
+              <div
+                key={i}
+                className="absolute inset-x-1.5 flex gap-1 truncate"
+                style={{ top }}
+              >
+                {action.time && <span className="font-semibold tabular-nums">{action.time}</span>}
+                <span className="truncate">{action.label}</span>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -131,7 +171,7 @@ function NowLine({
   containerHeight: number;
 }) {
   if (nowMinutes < windowStart || nowMinutes > windowStart + span) return null;
-  const top = ((nowMinutes - windowStart) / span) * containerHeight;
+  const top = timeToPx(nowMinutes, windowStart, span, containerHeight);
   return (
     <div className="absolute inset-x-0 z-10 flex items-center" style={{ top }}>
       <span className="-ml-1 h-2 w-2 shrink-0 rounded-full bg-red-500" />
@@ -157,7 +197,7 @@ function HourGridlines({
         <div
           key={m}
           className="absolute inset-x-0 border-t border-zinc-100 dark:border-zinc-900"
-          style={{ top: ((m - windowStart) / span) * containerHeight }}
+          style={{ top: timeToPx(m, windowStart, span, containerHeight) }}
         />
       ))}
     </>
@@ -184,7 +224,7 @@ function DayColumn({
   return (
     <div
       className="relative border-l border-zinc-100 dark:border-zinc-900"
-      style={{ height: containerHeight + GRID_BOTTOM_PADDING }}
+      style={{ height: containerHeight + GRID_TOP_PADDING + GRID_BOTTOM_PADDING }}
     >
       <HourGridlines
         hourMarks={hourMarks}
@@ -330,13 +370,13 @@ function TodayEventsView({ name, password, reset, lock }: StaffAccessProps) {
 
                 <div
                   className="relative"
-                  style={{ height: containerHeight + GRID_BOTTOM_PADDING }}
+                  style={{ height: containerHeight + GRID_TOP_PADDING + GRID_BOTTOM_PADDING }}
                 >
                   {hourMarks.map((m) => (
                     <div
                       key={m}
                       className="absolute inset-x-0 px-1 text-[11px] text-zinc-400 dark:text-zinc-500"
-                      style={{ top: ((m - windowRange.start) / span) * containerHeight - 6 }}
+                      style={{ top: timeToPx(m, windowRange.start, span, containerHeight) - 6 }}
                     >
                       {formatMinutes(m)}
                     </div>
