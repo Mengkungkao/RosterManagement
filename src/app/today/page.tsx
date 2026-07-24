@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { EventRecord } from "@/lib/events";
 import { colorForEvent } from "@/lib/event-colors";
 import {
@@ -30,6 +30,9 @@ const GRID_TOP_PADDING = CARD_HEADER_HEIGHT + 4;
 // still get its own last activity clipped by the grid's overflow-hidden, one
 // level up from the card's own padding.
 const GRID_BOTTOM_PADDING = CARD_BODY_BOTTOM_PADDING + 4;
+
+const MIN_TODAY_COL_WIDTH = 140;
+const MAX_TODAY_COL_WIDTH = 520;
 
 // Pixel offset (from the grid body's own top, padding included) for a given
 // time — the one place the window→pixel conversion happens, so every piece
@@ -159,6 +162,54 @@ function EventCard({
   );
 }
 
+function ResizeHandle({
+  width,
+  onResize,
+  onReset,
+}: {
+  width: number;
+  onResize: (newWidth: number) => void;
+  onReset: () => void;
+}) {
+  const dragState = useRef<{ startX: number; startWidth: number } | null>(null);
+
+  function handlePointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    e.stopPropagation();
+    // Measure the column's actual rendered width rather than trusting the
+    // `width` prop, since an auto-sized column is laid out as a fluid `fr`
+    // track — its real pixel width depends on the container, not the prop.
+    const renderedWidth = e.currentTarget.parentElement?.getBoundingClientRect().width;
+    dragState.current = { startX: e.clientX, startWidth: renderedWidth ?? width };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }
+
+  function handlePointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (!dragState.current) return;
+    const delta = e.clientX - dragState.current.startX;
+    const next = Math.max(
+      MIN_TODAY_COL_WIDTH,
+      Math.min(MAX_TODAY_COL_WIDTH, dragState.current.startWidth + delta)
+    );
+    onResize(next);
+  }
+
+  function handlePointerUp(e: React.PointerEvent<HTMLDivElement>) {
+    dragState.current = null;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  }
+
+  return (
+    <div
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onDoubleClick={onReset}
+      title="Drag to resize · double-click to auto-fit"
+      className="absolute top-0 right-0 z-40 h-full w-2.5 cursor-col-resize touch-none select-none hover:bg-zinc-300 active:bg-zinc-400 dark:hover:bg-zinc-700"
+    />
+  );
+}
+
 function NowLine({
   nowMinutes,
   windowStart,
@@ -258,6 +309,9 @@ function TodayEventsView({ name, password, reset, lock }: StaffAccessProps) {
   const [error, setError] = useState<string | null>(null);
   const [days, setDays] = useState<DayData[]>([]);
   const [nowMinutes, setNowMinutes] = useState(() => getMelbourneMinutesNow());
+  // null = auto (shares the row equally with Tomorrow via `1fr`); a manual
+  // drag pins a fixed pixel width until reset (double-click the handle).
+  const [todayColWidth, setTodayColWidth] = useState<number | null>(null);
 
   useEffect(() => {
     const id = setInterval(() => setNowMinutes(getMelbourneMinutesNow()), 60_000);
@@ -351,7 +405,15 @@ function TodayEventsView({ name, password, reset, lock }: StaffAccessProps) {
             <div className="mt-4 overflow-hidden border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
               <div
                 className="grid"
-                style={{ gridTemplateColumns: `44px repeat(${days.length}, 1fr)` }}
+                style={{
+                  gridTemplateColumns: `44px ${days
+                    .map((day) =>
+                      day.label === "Today" && todayColWidth !== null
+                        ? `${todayColWidth}px`
+                        : "1fr"
+                    )
+                    .join(" ")}`,
+                }}
               >
                 <div className="border-b border-zinc-100 px-1 py-2 text-[11px] font-medium text-zinc-400 dark:border-zinc-900 dark:text-zinc-500">
                   Time
@@ -359,12 +421,19 @@ function TodayEventsView({ name, password, reset, lock }: StaffAccessProps) {
                 {days.map((day) => (
                   <div
                     key={day.date}
-                    className="border-b border-l border-zinc-100 px-2 py-2 text-xs font-medium text-zinc-700 dark:border-zinc-900 dark:text-zinc-300"
+                    className="relative border-b border-l border-zinc-100 px-2 py-2 text-xs font-medium text-zinc-700 dark:border-zinc-900 dark:text-zinc-300"
                   >
                     {day.label}{" "}
                     <span className="font-normal text-zinc-400">
                       — {formatDayLabel(day.date)}
                     </span>
+                    {day.label === "Today" && (
+                      <ResizeHandle
+                        width={todayColWidth ?? MIN_TODAY_COL_WIDTH}
+                        onResize={setTodayColWidth}
+                        onReset={() => setTodayColWidth(null)}
+                      />
+                    )}
                   </div>
                 ))}
 
