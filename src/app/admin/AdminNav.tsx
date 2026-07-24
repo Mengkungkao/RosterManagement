@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { ReactNode } from "react";
 
 const TABS = [
   { href: "/admin", label: "Availability" },
@@ -9,11 +10,11 @@ const TABS = [
   { href: "/admin/roster", label: "Roster Match" },
 ];
 
-export default function AdminNav() {
+export default function AdminNav({ right }: { right?: ReactNode }) {
   const pathname = usePathname();
 
   return (
-    <nav className="mt-4 flex gap-1 border-b border-zinc-200 dark:border-zinc-800">
+    <nav className="mt-4 flex flex-wrap items-center gap-1 border-b border-zinc-200 dark:border-zinc-800">
       {TABS.map((tab) => {
         const active = pathname === tab.href;
         return (
@@ -30,6 +31,9 @@ export default function AdminNav() {
           </Link>
         );
       })}
+      {right && (
+        <div className="ml-auto flex flex-wrap items-center gap-3 pb-2 text-sm">{right}</div>
+      )}
     </nav>
   );
 }

@@ -3,7 +3,7 @@ import { isAdminRequest } from "@/lib/admin-auth";
 import { listEvents } from "@/lib/events";
 import { readAllAvailability } from "@/lib/sheets";
 import { generateRoster } from "@/lib/roster-assignment";
-import { saveRosterAssignments } from "@/lib/roster-sheet";
+import { saveRoster } from "@/lib/roster-sheet";
 
 export const dynamic = "force-dynamic";
 
@@ -14,9 +14,13 @@ export async function POST() {
 
   try {
     const [events, staff] = await Promise.all([listEvents(), readAllAvailability()]);
-    const assignments = generateRoster(events, staff);
-    await saveRosterAssignments(events, assignments);
-    return NextResponse.json({ assignments });
+    const result = generateRoster(events, staff);
+    await saveRoster(events, result);
+    return NextResponse.json({
+      days: result.days.length,
+      staff: result.staffNames.length,
+      generatedAt: result.generatedAt,
+    });
   } catch (err) {
     console.error("Failed to generate roster", err);
     return NextResponse.json(

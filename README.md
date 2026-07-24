@@ -10,18 +10,19 @@ Sheet, so there's no database to manage — the sheet *is* the database.
 - **Admin → Availability** (`/admin`) — password-protected table of every staff
   member's availability for the week, read live from the sheet.
 - **Admin → Events** (`/admin/events`) — add, edit, and delete planned events (name,
-  date, start/end time, **staff needed**, location, notes), each with optional
-  **phases** — timed milestones within the event, e.g. "18:30 Entree serve", "19:00
-  Main start". Phases are just labels for a moment in time; leave the time blank to
-  mean "at the start of the event". "Staff needed" is how many people the auto-roster
-  tries to fill the event with (default 1).
+  date, start/end time, location, notes), each with optional **phases** — timed
+  milestones within the event, e.g. "18:30 Entree serve", "19:00 Main start". Phases
+  are just labels for a moment in time; leave the time blank to mean "at the start of
+  the event".
 - **Admin → Roster Match** (`/admin/roster`) — a weekly grid: days (Mon–Sun) across
   the top, hours (00:00–23:00, Melbourne time) down the side. Each event renders as
   one continuous, colour-coded block (not repeated per hour); events that overlap in
   time are placed side by side instead of stacked. Each block shows a heading (event
-  name + location), its time schedule (start, each phase, end — all with times), and,
-  once rostered, who's assigned to it. Click a block to open its detail panel:
-  - **Rostered staff** — who's currently assigned (from the last auto-roster run).
+  name + location) and its phases with their times. Click a block to open its detail
+  panel:
+  - **Staff working {day}** — everyone available that day, with their own submitted
+    hours as their shift. There's no headcount to fill — if someone's available on a
+    day that has an event, they're on the list.
   - **Setup / prep** — staff available in a configurable window (default 1h) before
     the event starts.
   - **During the event** — broken into segments by the event's phases (or one segment
@@ -31,12 +32,11 @@ Sheet, so there's no database to manage — the sheet *is* the database.
 
   Staff are badged **full** (available the whole segment) or **partial**.
 
-  The **Auto-assign roster** button computes a roster for every event in one go:
-  it fills each event's "staff needed" with available people (preferring full
-  coverage over partial, and spreading shifts evenly across staff who are
-  interchangeable), never double-books someone onto two overlapping events on the
-  same weekday, and saves the result to the `Roster` sheet tab. Re-running it
-  regenerates the whole week's roster from scratch.
+  The **Save roster to Google Sheets** button writes a printable weekly roster to the
+  `Roster` sheet tab — staff down the rows, days across the columns, with each day's
+  events summarized above the staff block. It's a live snapshot of who's available on
+  every day that has an event; re-running it overwrites the tab with the current
+  numbers.
 
 ## 1. Create the Google Sheet
 
@@ -45,8 +45,8 @@ Sheet, so there's no database to manage — the sheet *is* the database.
    - `Events` (or your own name — set it in `GOOGLE_EVENTS_SHEET_TAB`)
    - `Roster` (or your own name — set it in `GOOGLE_ROSTER_SHEET_TAB`)
 2. Leave all three tabs empty — the app writes its own header row on first save.
-   The `Roster` tab is written the first time you click **Auto-assign roster**, so
-   it's fine if it stays empty until then.
+   The `Roster` tab is written the first time you click **Save roster to Google
+   Sheets**, so it's fine if it stays empty until then.
 3. Copy the **Sheet ID** from the URL:
    `https://docs.google.com/spreadsheets/d/`**`THIS_PART`**`/edit`
 
@@ -105,23 +105,31 @@ auto-computed summary (`Fully available` / `Partially available` / `Unavailable`
 same name (case-insensitive) replaces that person's row rather than duplicating it.
 
 **Events tab** — one row per event:
-`No | Event Name | Date | Start Time | End Time | Staff Needed | Location | Notes | Phases | ID`.
+`No | Event Name | Date | Start Time | End Time | Location | Notes | Phases | ID`.
 Managed entirely from `/admin/events`; the `ID` column is an internal key used for
 editing and deleting — leave it alone if you edit the sheet directly. Each phase is
 stored on its own line within the `Phases` cell as `HH:MM Label` (or just `Label` if
 no time was set).
 
-**Roster tab** — one row per event, written by **Auto-assign roster**:
-`No | Event Name | Date | Day | Start Time | End Time | Location | Staff Needed | Assigned Staff | Status | Generated At | Event ID`.
-`Assigned Staff` lists one name per line (suffixed `(partial)` if that person only
-covers part of the event). `Status` is `Filled`, `Short by N`, or `Unfilled`. Every
-auto-assign run fully overwrites this tab — it's a snapshot of the last run, not an
-editable schedule.
+**Roster tab** — a printable weekly grid, written by **Save roster to Google
+Sheets**:
+- Row 1: the title, e.g. `Staff Roster 06-Jul-26 to 12-Jul-26` (the date range spanned
+  by your events).
+- Row 2: `Name | Monday | Tuesday | ... | Sunday`.
+- Row 3: the calendar date under each day that has an event.
+- Row 4 (`Events`): a summary of that day's events (name, time, location, phases),
+  one cell per day, multiple events stacked with a blank line between them.
+- `Closing Sets` / `Mid-shift Sets`: blank rows left for you to fill in by hand.
+- Then one row per staff member, with their submitted hours in each day that has an
+  event (blank if they're not available, or if that day has nothing on).
+
+Every save fully overwrites this tab with the current numbers — it's a snapshot, not
+an editable schedule that persists between runs.
 
 The roster page itself (`/admin/roster`) computes availability live from the
 Availability and Events tabs — converting each event's date to a day of week (in
 Melbourne time) and matching against hours (for the grid), arbitrary windows (for the
-prep/segment/closing panel), or the auto-assign algorithm, all accounting for custom
-hours and overnight ranges. Because events are matched by day of week rather than
-exact date, events on the same weekday in different weeks share the same grid row —
-the grid represents a typical week, not a specific one.
+prep/segment/closing panel), or the full day (for who's working). Because events are
+matched by day of week rather than exact date, events on the same weekday in
+different weeks share the same grid row — the grid represents a typical week, not a
+specific one.

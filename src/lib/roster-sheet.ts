@@ -1,89 +1,94 @@
-import { columnLetter, getSheetId, getSheetsClient } from "./google-client";
+import { getSheetId, getSheetsClient } from "./google-client";
 import type { EventRecord } from "./events";
-import { getMelbourneWeekday } from "./roster-grid";
-import type { AssignedStaff, RosterAssignment } from "./roster-assignment";
+import { DAYS } from "./availability";
+import type { RosterResult } from "./roster-assignment";
 
-const HEADER = [
-  "No",
-  "Event Name",
-  "Date",
-  "Day",
-  "Start Time",
-  "End Time",
-  "Location",
-  "Staff Needed",
-  "Assigned Staff",
-  "Status",
-  "Generated At",
-  "Event ID",
+const MONTH_ABBR = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
 ];
-const EVENT_ID_COLUMN = HEADER.length - 1;
-const PARTIAL_SUFFIX = /\s*\(partial\)\s*$/i;
 
 function getSheetName() {
   return process.env.GOOGLE_ROSTER_SHEET_TAB || "Roster";
 }
 
-function formatAssignedCell(assigned: AssignedStaff[]): string {
-  return assigned
-    .map((a) => (a.coverage === "partial" ? `${a.staffName} (partial)` : a.staffName))
-    .join("\n");
+function formatDisplayDate(dateStr: string): string {
+  const [year, month, day] = dateStr.split("-").map(Number);
+  return `${String(day).padStart(2, "0")}-${MONTH_ABBR[month - 1]}-${String(year).slice(-2)}`;
 }
 
-function parseAssignedCell(cell: string): AssignedStaff[] {
-  return cell
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const partial = PARTIAL_SUFFIX.test(line);
-      return {
-        staffName: line.replace(PARTIAL_SUFFIX, "").trim(),
-        coverage: partial ? ("partial" as const) : ("full" as const),
-      };
-    });
+function formatEventSummary(event: EventRecord): string {
+  const lines = [`${event.name} ${event.startTime}-${event.endTime}`];
+  if (event.location) lines.push(event.location);
+  if (event.phases.length > 0) {
+    lines.push(
+      event.phases.map((p) => (p.time ? `${p.label} ${p.time}` : p.label)).join(", ")
+    );
+  }
+  if (event.notes) lines.push(event.notes);
+  return lines.join("\n");
 }
 
-function statusLabel(assignment: RosterAssignment): string {
-  if (assignment.staffNeeded === 0) return "No staff needed";
-  if (assignment.assigned.length === 0) return "Unfilled";
-  if (assignment.shortfall === 0) return "Filled";
-  return `Short by ${assignment.shortfall}`;
-}
+// Writes a printable weekly roster: staff down the rows, days across the
+// columns, with each day's planned events summarized above the staff block
+// so whoever reads the sheet can see what they're rostering against.
+export async function saveRoster(events: EventRecord[], result: RosterResult): Promise<void> {
+  const byDay = new Map(result.days.map((d) => [d.day, d]));
 
-export async function saveRosterAssignments(
-  events: EventRecord[],
-  assignments: RosterAssignment[]
-): Promise<void> {
-  const eventsById = new Map(events.map((e) => [e.id, e]));
-  const rows = assignments
-    .map((assignment) => ({ assignment, event: eventsById.get(assignment.eventId) }))
-    .filter(
-      (row): row is { assignment: RosterAssignment; event: EventRecord } => !!row.event
-    )
-    .sort((a, b) => {
-      const dateCompare = a.event.date.localeCompare(b.event.date);
-      return dateCompare !== 0
-        ? dateCompare
-        : a.event.startTime.localeCompare(b.event.startTime);
-    });
+  const eventDates = events.map((e) => e.date).filter(Boolean).sort();
+  const title =
+    eventDates.length > 0
+      ? `Staff Roster ${formatDisplayDate(eventDates[0])} to ${formatDisplayDate(eventDates[eventDates.length - 1])}`
+      : "Staff Roster";
+
+  const dateRow = ["", ...DAYS.map((day) => {
+    const entry = byDay.get(day);
+    return entry ? formatDisplayDate(entry.date) : "";
+  })];
+
+  const eventsRow = ["Events", ...DAYS.map((day) => {
+    const entry = byDay.get(day);
+    return entry ? entry.events.map(formatEventSummary).join("\n\n") : "";
+  })];
+
+  const shiftByStaffAndDay = new Map<string, Map<string, string>>();
+  for (const day of result.days) {
+    for (const shift of day.shifts) {
+      if (!shiftByStaffAndDay.has(shift.staffName)) {
+        shiftByStaffAndDay.set(shift.staffName, new Map());
+      }
+      shiftByStaffAndDay.get(shift.staffName)!.set(day.day, shift.label);
+    }
+  }
+
+  const staffRows = result.staffNames.map((name) => [
+    name,
+    ...DAYS.map((day) => shiftByStaffAndDay.get(name)?.get(day) || ""),
+  ]);
+
+  const blankRow = () => Array(DAYS.length + 1).fill("");
 
   const values = [
-    HEADER,
-    ...rows.map(({ assignment, event }, i) => [
-      i + 1,
-      event.name,
-      event.date,
-      getMelbourneWeekday(event.date),
-      event.startTime,
-      event.endTime,
-      event.location,
-      assignment.staffNeeded,
-      formatAssignedCell(assignment.assigned),
-      statusLabel(assignment),
-      assignment.generatedAt,
-      event.id,
-    ]),
+    [title, ...Array(DAYS.length).fill("")],
+    ["Name", ...DAYS],
+    dateRow,
+    eventsRow,
+    ["Closing Sets", ...Array(DAYS.length).fill("")],
+    ["Mid-shift Sets", ...Array(DAYS.length).fill("")],
+    blankRow(),
+    ...staffRows,
+    blankRow(),
+    [`Generated ${result.generatedAt}`, ...Array(DAYS.length).fill("")],
   ];
 
   const sheets = await getSheetsClient();
@@ -100,27 +105,4 @@ export async function saveRosterAssignments(
     valueInputOption: "RAW",
     requestBody: { values },
   });
-}
-
-export async function listRosterAssignments(): Promise<RosterAssignment[]> {
-  const sheets = await getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: getSheetId(),
-    range: `${getSheetName()}!A2:${columnLetter(HEADER.length - 1)}`,
-  });
-  const rows = res.data.values || [];
-
-  return rows
-    .filter((r) => r[EVENT_ID_COLUMN])
-    .map((r) => {
-      const assigned = parseAssignedCell(String(r[8] || ""));
-      const staffNeeded = Number(r[7]) || 0;
-      return {
-        eventId: String(r[EVENT_ID_COLUMN]),
-        assigned,
-        staffNeeded,
-        shortfall: Math.max(0, staffNeeded - assigned.length),
-        generatedAt: String(r[10] || ""),
-      };
-    });
 }

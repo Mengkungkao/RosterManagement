@@ -8,15 +8,13 @@ const HEADER = [
   "Date",
   "Start Time",
   "End Time",
-  "Staff Needed",
   "Location",
-  "Notes",
   "Phases",
+  "Notes",
   "ID",
 ];
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const PHASE_LINE_PATTERN = /^(?:([01]\d|2[0-3]):([0-5]\d)\s+)?(.+)$/;
-const DEFAULT_STAFF_NEEDED = 1;
 
 export interface EventPhase {
   label: string;
@@ -29,7 +27,6 @@ export interface EventRecord {
   date: string; // YYYY-MM-DD
   startTime: string; // HH:MM
   endTime: string; // HH:MM
-  staffNeeded: number;
   location: string;
   notes: string;
   phases: EventPhase[];
@@ -46,13 +43,6 @@ function validateInput(input: EventInput): string | null {
   if (!DATE_PATTERN.test(input.date)) return "Date must be in YYYY-MM-DD format";
   if (!TIME_PATTERN.test(input.startTime) || !TIME_PATTERN.test(input.endTime)) {
     return "Start and end time must be in HH:MM format";
-  }
-  if (
-    !Number.isInteger(input.staffNeeded) ||
-    input.staffNeeded < 0 ||
-    input.staffNeeded > 200
-  ) {
-    return "Staff needed must be a whole number between 0 and 200";
   }
   for (const phase of input.phases) {
     if (!phase.label.trim()) return "Each phase needs a label";
@@ -90,10 +80,9 @@ function toRow(no: number, event: EventRecord): (string | number)[] {
     event.date,
     event.startTime,
     event.endTime,
-    event.staffNeeded,
     event.location,
-    event.notes,
     formatPhasesCell(event.phases),
+    event.notes,
     event.id,
   ];
 }
@@ -121,22 +110,17 @@ async function readRows(): Promise<EventRecord[]> {
   const events = rows
     .filter((r) => r[1])
     .map((r) => {
-      let id = String(r[9] || "");
+      let id = String(r[8] || "");
       if (!id || seenIds.has(id)) id = randomUUID();
       seenIds.add(id);
-      const staffNeeded = Number(r[5]);
       return {
         name: String(r[1]),
         date: String(r[2] || ""),
         startTime: String(r[3] || ""),
         endTime: String(r[4] || ""),
-        staffNeeded:
-          Number.isInteger(staffNeeded) && staffNeeded >= 0
-            ? staffNeeded
-            : DEFAULT_STAFF_NEEDED,
-        location: String(r[6] || ""),
+        location: String(r[5] || ""),
+        phases: parsePhasesCell(String(r[6] || "")),
         notes: String(r[7] || ""),
-        phases: parsePhasesCell(String(r[8] || "")),
         id,
       };
     });
@@ -218,7 +202,7 @@ function parsePhasesInput(value: unknown): EventPhase[] | null {
 
 export function parseEventInput(body: unknown): EventInput | null {
   if (typeof body !== "object" || body === null) return null;
-  const { name, date, startTime, endTime, staffNeeded, location, notes, phases } =
+  const { name, date, startTime, endTime, location, notes, phases } =
     body as Record<string, unknown>;
 
   if (
@@ -229,7 +213,6 @@ export function parseEventInput(body: unknown): EventInput | null {
   ) {
     return null;
   }
-  if (staffNeeded !== undefined && typeof staffNeeded !== "number") return null;
 
   const parsedPhases = parsePhasesInput(phases);
   if (parsedPhases === null) return null;
@@ -239,8 +222,6 @@ export function parseEventInput(body: unknown): EventInput | null {
     date: date.trim(),
     startTime: startTime.trim(),
     endTime: endTime.trim(),
-    staffNeeded:
-      typeof staffNeeded === "number" ? Math.round(staffNeeded) : DEFAULT_STAFF_NEEDED,
     location: typeof location === "string" ? location.trim() : "",
     notes: typeof notes === "string" ? notes.trim() : "",
     phases: parsedPhases,

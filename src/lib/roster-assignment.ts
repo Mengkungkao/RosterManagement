@@ -1,77 +1,59 @@
 import { DAYS, type Day } from "./availability";
 import type { EventRecord } from "./events";
 import type { StaffAvailability } from "./sheets";
-import { getAvailableStaff, getMelbourneWeekday, overlaps, toMinutes } from "./roster-grid";
+import { getDayShifts, getMelbourneWeekday, type StaffDayShift } from "./roster-grid";
 import { formatMelbourneTimestamp } from "./google-client";
 
-export interface AssignedStaff {
-  staffName: string;
-  coverage: "full" | "partial";
+export interface RosterDay {
+  day: Day;
+  date: string; // YYYY-MM-DD — the earliest event date that falls on this weekday
+  events: EventRecord[]; // that day's events, earliest first
+  shifts: StaffDayShift[]; // every staff member who's available that day
 }
 
-export interface RosterAssignment {
-  eventId: string;
-  assigned: AssignedStaff[];
-  staffNeeded: number;
-  shortfall: number;
+export interface RosterResult {
+  days: RosterDay[]; // only weekdays with at least one event, Monday..Sunday order
+  staffNames: string[]; // everyone who has submitted availability, alphabetical
   generatedAt: string;
 }
 
-// Auto-rosters every event: for each event (processed in chronological order),
-// picks `staffNeeded` people from who's available, preferring full coverage
-// over partial and — among equally-suited candidates — whoever has the fewest
-// shifts assigned so far this run, so work spreads out across the week.
-// A staff member is never double-booked onto two overlapping events on the
-// same weekday (availability is a weekly-recurring pattern, so conflicts are
-// checked per weekday rather than per exact calendar date).
+// No headcount to hit and nothing to compete for — every staff member who's
+// available on a day that has at least one event goes on that day's roster,
+// with their own submitted hours as their shift. Days with no events are left
+// off entirely, since there's nothing to roster them against.
 export function generateRoster(
   events: EventRecord[],
   staff: StaffAvailability[]
-): RosterAssignment[] {
+): RosterResult {
   const generatedAt = formatMelbourneTimestamp(new Date());
 
-  const sortedEvents = [...events].sort((a, b) => {
-    const dateCompare = a.date.localeCompare(b.date);
-    return dateCompare !== 0 ? dateCompare : a.startTime.localeCompare(b.startTime);
-  });
-
-  const shiftsAssigned = new Map<string, number>();
-  const busyByDay = new Map<Day, Map<string, [number, number][]>>(
-    DAYS.map((day) => [day, new Map<string, [number, number][]>()])
-  );
-
-  return sortedEvents.map((event) => {
+  const eventsByDay = new Map<Day, EventRecord[]>();
+  const earliestDateByDay = new Map<Day, string>();
+  for (const event of events) {
     const weekday = getMelbourneWeekday(event.date);
-    const start = toMinutes(event.startTime);
-    const end = toMinutes(event.endTime);
-    const dayBusy = busyByDay.get(weekday)!;
+    if (!eventsByDay.has(weekday)) eventsByDay.set(weekday, []);
+    eventsByDay.get(weekday)!.push(event);
 
-    const candidates = getAvailableStaff(staff, weekday, start, end).filter((candidate) => {
-      const intervals = dayBusy.get(candidate.staffName) || [];
-      return !intervals.some(([busyStart, busyEnd]) => overlaps(start, end, busyStart, busyEnd));
-    });
+    const existing = earliestDateByDay.get(weekday);
+    if (!existing || event.date < existing) earliestDateByDay.set(weekday, event.date);
+  }
 
-    candidates.sort((a, b) => {
-      if (a.coverage !== b.coverage) return a.coverage === "full" ? -1 : 1;
-      const loadDiff =
-        (shiftsAssigned.get(a.staffName) || 0) - (shiftsAssigned.get(b.staffName) || 0);
-      return loadDiff !== 0 ? loadDiff : a.staffName.localeCompare(b.staffName);
-    });
-
-    const assigned = candidates.slice(0, event.staffNeeded);
-    for (const person of assigned) {
-      shiftsAssigned.set(person.staffName, (shiftsAssigned.get(person.staffName) || 0) + 1);
-      const intervals = dayBusy.get(person.staffName) || [];
-      intervals.push([start, end]);
-      dayBusy.set(person.staffName, intervals);
-    }
+  const days: RosterDay[] = DAYS.filter((day) => eventsByDay.has(day)).map((day) => {
+    const dayEvents = [...eventsByDay.get(day)!].sort((a, b) =>
+      a.startTime.localeCompare(b.startTime)
+    );
 
     return {
-      eventId: event.id,
-      assigned,
-      staffNeeded: event.staffNeeded,
-      shortfall: Math.max(0, event.staffNeeded - assigned.length),
-      generatedAt,
+      day,
+      date: earliestDateByDay.get(day)!,
+      events: dayEvents,
+      shifts: getDayShifts(staff, day),
     };
   });
+
+  return {
+    days,
+    staffNames: [...staff].map((s) => s.staffName).sort((a, b) => a.localeCompare(b)),
+    generatedAt,
+  };
 }

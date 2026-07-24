@@ -104,6 +104,30 @@ export function getAvailableStaff(
   return results.sort((a, b) => a.staffName.localeCompare(b.staffName));
 }
 
+export interface StaffDayShift {
+  staffName: string;
+  label: string; // "16:30-24:00", or "All day"
+}
+
+// Every staff member who's available on the given weekday, with their own
+// submitted hours as their shift label. No headcount, no picking — everyone
+// available goes on the list.
+export function getDayShifts(staff: StaffAvailability[], day: Day): StaffDayShift[] {
+  const shifts: StaffDayShift[] = [];
+  for (const person of staff) {
+    const availability = person.week[day];
+    if (availability.status === "unavailable") continue;
+    shifts.push({
+      staffName: person.staffName,
+      label:
+        availability.status === "available_all_day"
+          ? "All day"
+          : `${availability.startTime}-${availability.endTime}`,
+    });
+  }
+  return shifts.sort((a, b) => a.staffName.localeCompare(b.staffName));
+}
+
 // Staff available at a specific point in time on the given weekday.
 export function getAvailableStaffAt(
   staff: StaffAvailability[],

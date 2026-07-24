@@ -3,26 +3,23 @@
 import { useMemo, useRef, useState } from "react";
 import type { EventRecord } from "@/lib/events";
 import type { StaffAvailability } from "@/lib/sheets";
-import type { RosterAssignment } from "@/lib/roster-assignment";
 import { DAYS, type Day } from "@/lib/availability";
+import AdminNav from "../AdminNav";
 import {
   buildWeekLayout,
   getAvailableStaff,
+  getDayShifts,
   getMelbourneWeekday,
   mod1440,
   toMinutes,
   type PositionedEvent,
+  type StaffDayShift,
   type WindowAvailability,
 } from "@/lib/roster-grid";
 
 interface Props {
   events: EventRecord[];
   staff: StaffAvailability[];
-  initialAssignments: RosterAssignment[];
-}
-
-function byEventId(assignments: RosterAssignment[]): Record<string, RosterAssignment> {
-  return Object.fromEntries(assignments.map((a) => [a.eventId, a]));
 }
 
 // The grid fills whatever height its container has (see the desktop grid's
@@ -138,21 +135,20 @@ function formatShortDate(dateStr: string): string {
   return `${day} ${MONTH_ABBR[month - 1] ?? ""}`.trim();
 }
 
-function RosteredStaff({ assignment }: { assignment: RosterAssignment }) {
-  if (assignment.staffNeeded === 0) return null;
+function DayShiftList({ shifts }: { shifts: StaffDayShift[] }) {
+  if (shifts.length === 0) {
+    return (
+      <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">No one available.</p>
+    );
+  }
   return (
-    <div className="mt-0.5 space-y-0.5">
-      {assignment.assigned.map((person, i) => (
-        <div key={i} className="truncate">
-          ✓ {person.staffName}
-          {person.coverage === "partial" && " (partial)"}
+    <div className="mt-1 space-y-0.5 text-sm text-zinc-700 dark:text-zinc-300">
+      {shifts.map((shift) => (
+        <div key={shift.staffName} className="flex items-center justify-between gap-2">
+          <span>{shift.staffName}</span>
+          <span className="tabular-nums text-zinc-400 dark:text-zinc-500">{shift.label}</span>
         </div>
       ))}
-      {assignment.shortfall > 0 && (
-        <div className="font-semibold text-red-700 dark:text-red-300">
-          Short {assignment.shortfall}
-        </div>
-      )}
     </div>
   );
 }
@@ -186,11 +182,9 @@ function StaffList({ items }: { items: WindowAvailability[] }) {
 
 function EventBlock({
   pe,
-  assignment,
   onSelect,
 }: {
   pe: PositionedEvent;
-  assignment: RosterAssignment | undefined;
   onSelect: () => void;
 }) {
   const duration = pe.endMin - pe.startMin;
@@ -210,9 +204,9 @@ function EventBlock({
       style={{
         top: `${(pe.startMin / 1440) * 100}%`,
         // No fixed height: the card grows to fit however much it's showing
-        // (name, location, phases, roster) instead of clipping to the
-        // event's time span. The time span still sets a *minimum*, so a
-        // long event never looks shorter than it actually runs.
+        // (name, location, phases) instead of clipping to the event's time
+        // span. The time span still sets a *minimum*, so a long event never
+        // looks shorter than it actually runs.
         minHeight: `max(${MIN_CARD_HEIGHT}px, ${Math.max((duration / 1440) * 100, MIN_BLOCK_PERCENT)}%)`,
         left: `calc(${(pe.track / pe.trackCount) * 100}% + 2px)`,
         width: `calc(${100 / pe.trackCount}% - 4px)`,
@@ -231,7 +225,7 @@ function EventBlock({
         {pe.event.location && <div className="opacity-80">{pe.event.location}</div>}
       </div>
 
-      {(sortedPhases.length > 0 || assignment) && (
+      {sortedPhases.length > 0 && (
         <div className="min-h-0 flex-1 space-y-0.5 overflow-hidden px-1.5 pt-0.5 pb-1 opacity-90">
           {sortedPhases.map((phase, i) => (
             <div key={i} className="flex gap-1 truncate">
@@ -239,11 +233,6 @@ function EventBlock({
               <span className="truncate">{phase.label}</span>
             </div>
           ))}
-          {assignment && (
-            <div className="border-t border-current/20 pt-0.5">
-              <RosteredStaff assignment={assignment} />
-            </div>
-          )}
         </div>
       )}
     </button>
@@ -266,23 +255,16 @@ function HourGridlines() {
 
 function DayColumn({
   positionedEvents,
-  assignments,
   onSelect,
 }: {
   positionedEvents: PositionedEvent[];
-  assignments: Record<string, RosterAssignment>;
   onSelect: (id: string) => void;
 }) {
   return (
     <div className="relative h-full border-l border-zinc-100 dark:border-zinc-900">
       <HourGridlines />
       {positionedEvents.map((pe) => (
-        <EventBlock
-          key={pe.event.id}
-          pe={pe}
-          assignment={assignments[pe.event.id]}
-          onSelect={() => onSelect(pe.event.id)}
-        />
+        <EventBlock key={pe.event.id} pe={pe} onSelect={() => onSelect(pe.event.id)} />
       ))}
     </div>
   );
@@ -355,8 +337,18 @@ function ResizeHandle({
   );
 }
 
-export default function RosterBoard({ events, staff, initialAssignments }: Props) {
+export default function RosterBoard({ events, staff }: Props) {
   const layout = useMemo(() => buildWeekLayout(events), [events]);
+  // Who's on for each day is derived straight from availability — no fetch,
+  // no saved-assignment state. It's always live, whether or not the sheet
+  // has ever been saved.
+  const dayShifts = useMemo(
+    () => Object.fromEntries(DAYS.map((day) => [day, getDayShifts(staff, day)])) as Record<
+      Day,
+      StaffDayShift[]
+    >,
+    [staff]
+  );
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedDay, setSelectedDay] = useState<Day>(DAYS[0]);
 
@@ -387,43 +379,41 @@ export default function RosterBoard({ events, staff, initialAssignments }: Props
   );
   const [prepHours, setPrepHours] = useState(1);
   const [closingHours, setClosingHours] = useState(1);
-  const [assignments, setAssignments] = useState<Record<string, RosterAssignment>>(() =>
-    byEventId(initialAssignments)
-  );
-  const [generating, setGenerating] = useState(false);
-  const [generateMessage, setGenerateMessage] = useState<
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<
     { type: "success" | "error"; text: string } | null
   >(null);
 
-  async function handleGenerate() {
+  async function handleSave() {
     if (
       typeof window !== "undefined" &&
       !window.confirm(
-        "Auto-assign the whole week's roster now? This overwrites any previously saved roster in Google Sheets."
+        "Save this week's roster to Google Sheets now? This overwrites any previously saved roster."
       )
     ) {
       return;
     }
-    setGenerating(true);
-    setGenerateMessage(null);
+    setSaving(true);
+    setSaveMessage(null);
     try {
       const res = await fetch("/api/admin/roster/generate", { method: "POST" });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to generate roster");
-      setAssignments(byEventId(data.assignments));
-      setGenerateMessage({ type: "success", text: "Roster generated and saved to Google Sheets." });
+      if (!res.ok) throw new Error(data.error || "Failed to save roster");
+      setSaveMessage({
+        type: "success",
+        text: `Saved — ${data.days} day${data.days === 1 ? "" : "s"}, ${data.staff} staff.`,
+      });
     } catch (err) {
-      setGenerateMessage({
+      setSaveMessage({
         type: "error",
-        text: err instanceof Error ? err.message : "Failed to generate roster",
+        text: err instanceof Error ? err.message : "Failed to save roster",
       });
     } finally {
-      setGenerating(false);
+      setSaving(false);
     }
   }
 
   const selectedEvent = events.find((e) => e.id === selectedId) ?? null;
-  const selectedAssignment = selectedId ? assignments[selectedId] : undefined;
 
   const details = useMemo(() => {
     if (!selectedEvent) return null;
@@ -446,42 +436,39 @@ export default function RosterBoard({ events, staff, initialAssignments }: Props
     };
   }, [selectedEvent, staff, prepHours, closingHours]);
 
-  const assignedCount = Object.keys(assignments).length;
-  const filledCount = Object.values(assignments).filter((a) => a.shortfall === 0).length;
+  const activeDays = DAYS.filter((day) => layout[day].length > 0);
+  const totalShifts = activeDays.reduce((sum, day) => sum + dayShifts[day].length, 0);
 
   return (
     <>
-      <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-        <div className="text-sm text-zinc-600 dark:text-zinc-400">
-          {assignedCount > 0 ? (
-            <>
-              Roster saved: <span className="font-medium text-zinc-900 dark:text-zinc-50">{filledCount}</span> of{" "}
-              {assignedCount} events fully staffed.
-            </>
-          ) : (
-            "No roster generated yet."
-          )}
-          {generateMessage && (
-            <span
-              className={`ml-2 ${
-                generateMessage.type === "success"
-                  ? "text-emerald-600 dark:text-emerald-400"
-                  : "text-red-600 dark:text-red-400"
-              }`}
-            >
-              {generateMessage.text}
+      <AdminNav
+        right={
+          <>
+            <span className="text-zinc-600 dark:text-zinc-400">
+              
+              {saveMessage && (
+                <span
+                  className={`ml-2 ${
+                    saveMessage.type === "success"
+                      ? "text-emerald-600 dark:text-emerald-400"
+                      : "text-red-600 dark:text-red-400"
+                  }`}
+                >
+                  {saveMessage.text}
+                </span>
+              )}
             </span>
-          )}
-        </div>
-        <button
-          type="button"
-          onClick={handleGenerate}
-          disabled={generating}
-          className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-        >
-          {generating ? "Assigning…" : "Auto-assign roster"}
-        </button>
-      </div>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving}
+              className="rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+            >
+              {saving ? "Saving…" : "Save roster to Google Sheets"}
+            </button>
+          </>
+        }
+      />
 
       {/* Phone/tablet: one day at a time, full width, no drag-resize (nothing to trade width with). */}
       <div className="mt-4 md:hidden">
@@ -508,11 +495,7 @@ export default function RosterBoard({ events, staff, initialAssignments }: Props
           <div className="flex" style={{ height: MOBILE_TOTAL_HEIGHT }}>
             <TimeGutter />
             <div className="flex-1">
-              <DayColumn
-                positionedEvents={layout[selectedDay]}
-                assignments={assignments}
-                onSelect={setSelectedId}
-              />
+              <DayColumn positionedEvents={layout[selectedDay]} onSelect={setSelectedId} />
             </div>
           </div>
         </div>
@@ -551,12 +534,7 @@ export default function RosterBoard({ events, staff, initialAssignments }: Props
           <TimeGutter />
 
           {DAYS.map((day) => (
-            <DayColumn
-              key={day}
-              positionedEvents={layout[day]}
-              assignments={assignments}
-              onSelect={setSelectedId}
-            />
+            <DayColumn key={day} positionedEvents={layout[day]} onSelect={setSelectedId} />
           ))}
         </div>
       </div>
@@ -592,33 +570,10 @@ export default function RosterBoard({ events, staff, initialAssignments }: Props
             </div>
 
             <section className="mt-5">
-              <div className="flex items-center justify-between gap-2">
-                <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                  Rostered staff
-                </h3>
-                {selectedAssignment && (
-                  <span className="text-xs text-zinc-400 dark:text-zinc-500">
-                    Needed {selectedAssignment.staffNeeded}
-                  </span>
-                )}
-              </div>
-              {selectedAssignment ? (
-                <>
-                  <StaffList items={selectedAssignment.assigned} />
-                  {selectedAssignment.shortfall > 0 && (
-                    <p className="mt-1 text-xs font-medium text-red-600 dark:text-red-400">
-                      Short by {selectedAssignment.shortfall}.
-                    </p>
-                  )}
-                  <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">
-                    Generated {selectedAssignment.generatedAt}
-                  </p>
-                </>
-              ) : (
-                <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">
-                  Not yet rostered — run Auto-assign roster.
-                </p>
-              )}
+              <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                Staff working {details.weekday}
+              </h3>
+              <DayShiftList shifts={dayShifts[details.weekday]} />
             </section>
 
             <section className="mt-5">
