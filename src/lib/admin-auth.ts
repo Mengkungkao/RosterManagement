@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 
 export const ADMIN_COOKIE_NAME = "roster_admin_session";
 
@@ -34,4 +35,9 @@ export function isAdminSessionValid(cookieValue: string | undefined): boolean {
 export async function isAdminRequest(): Promise<boolean> {
   const cookieStore = await cookies();
   return isAdminSessionValid(cookieStore.get(ADMIN_COOKIE_NAME)?.value);
+}
+
+// For admin pages: sends anyone without a valid session to the sign-in page.
+export async function requireAdmin(): Promise<void> {
+  if (!(await isAdminRequest())) redirect("/admin/login");
 }

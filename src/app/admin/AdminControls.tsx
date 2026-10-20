@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { secondaryButton } from "../ui";
 
 export default function AdminControls() {
   const router = useRouter();
@@ -19,7 +20,7 @@ export default function AdminControls() {
       <button
         type="button"
         onClick={() => router.refresh()}
-        className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+        className={secondaryButton}
       >
         Refresh
       </button>
@@ -27,7 +28,7 @@ export default function AdminControls() {
         type="button"
         onClick={handleLogout}
         disabled={loggingOut}
-        className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+        className={secondaryButton}
       >
         {loggingOut ? "Signing out…" : "Sign out"}
       </button>

@@ -3,13 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { EventRecord } from "@/lib/events";
 import { colorForEvent } from "@/lib/event-colors";
-import {
-  getMelbourneMinutesNow,
-  layoutDayEvents,
-  mod1440,
-  toMinutes,
-  type PositionedEvent,
-} from "@/lib/roster-grid";
+import { formatHours, formatWeekdayDate, mod1440, toMinutes } from "@/lib/dates";
+import { getMelbourneMinutesNow, layoutDayEvents, type PositionedEvent } from "@/lib/roster-grid";
 import StaffAccessGate, { StaffAccessProps } from "../StaffAccessGate";
 
 const ROW_HEIGHT_PX = 64; // px per hour in the time grid
@@ -50,6 +45,53 @@ interface DayData {
   date: string;
   label: string;
   events: EventRecord[];
+}
+
+interface WorkDay {
+  date: string;
+  hours: number;
+  breaks: string[];
+  shifts: { eventId: string; eventName: string; location: string; time: string }[];
+}
+
+function MyShifts({ workDays, today }: { workDays: WorkDay[]; today: string | undefined }) {
+  return (
+    <section className="mt-4">
+      <h2 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+        Your shifts <span className="font-normal text-zinc-400">· next 2 weeks</span>
+      </h2>
+      {workDays.length === 0 ? (
+        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+          You&apos;re not rostered on in the next two weeks.
+        </p>
+      ) : (
+        <ul className="mt-2 divide-y divide-zinc-100 rounded-lg border border-zinc-200 dark:divide-zinc-900 dark:border-zinc-800">
+          {workDays.map((day) => (
+            <li
+              key={day.date}
+              className={`px-3 py-2.5 ${day.date === today ? "bg-emerald-50 dark:bg-emerald-950/40" : ""}`}
+            >
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="font-medium text-zinc-900 dark:text-zinc-50">
+                  {day.date === today ? "Today" : formatWeekdayDate(day.date)}
+                </span>
+                <span className="shrink-0 text-sm text-zinc-500 tabular-nums dark:text-zinc-400">
+                  {formatHours(day.hours)}
+                  {day.breaks.length > 0 && ` · break ${day.breaks.join(", ")}`}
+                </span>
+              </div>
+              {day.shifts.map((shift) => (
+                <div key={shift.eventId} className="mt-0.5 text-sm text-zinc-700 dark:text-zinc-300">
+                  <span className="tabular-nums">{shift.time}</span> {shift.eventName}
+                  {shift.location && <span className="text-zinc-500 dark:text-zinc-400"> · {shift.location}</span>}
+                </div>
+              ))}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
 }
 
 function formatMinutes(totalMinutes: number): string {
@@ -308,6 +350,7 @@ function TodayEventsView({ name, password, reset, lock }: StaffAccessProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [days, setDays] = useState<DayData[]>([]);
+  const [workDays, setWorkDays] = useState<WorkDay[]>([]);
   const [nowMinutes, setNowMinutes] = useState(() => getMelbourneMinutesNow());
   // null = auto (shares the row equally with Tomorrow via `1fr`); a manual
   // drag pins a fixed pixel width until reset (double-click the handle).
@@ -340,6 +383,7 @@ function TodayEventsView({ name, password, reset, lock }: StaffAccessProps) {
         }
         if (cancelled) return;
         setDays(data.days);
+        setWorkDays(data.workDays);
       } catch {
         if (!cancelled) {
           setError("Couldn't load today's events. Please try again.");
@@ -388,8 +432,17 @@ function TodayEventsView({ name, password, reset, lock }: StaffAccessProps) {
         <p className="mt-4 text-sm text-red-600 dark:text-red-400">{error}</p>
       )}
 
+      {!loading && !error && (
+        <>
+          <MyShifts workDays={workDays} today={days[0]?.date} />
+          <h2 className="mt-6 text-sm font-medium text-zinc-700 dark:text-zinc-300">
+            Today &amp; tomorrow
+          </h2>
+        </>
+      )}
+
       {!loading && !error && !windowRange && (
-        <p className="mt-4 text-sm text-zinc-500 dark:text-zinc-400">
+        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
           No events scheduled today or tomorrow.
         </p>
       )}
@@ -402,7 +455,7 @@ function TodayEventsView({ name, password, reset, lock }: StaffAccessProps) {
           for (let m = windowRange.start; m <= windowRange.end; m += 60) hourMarks.push(m);
 
           return (
-            <div className="mt-4 overflow-hidden border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+            <div className="mt-2 overflow-hidden border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
               <div
                 className="grid"
                 style={{
@@ -478,11 +531,11 @@ export default function TodayPage() {
     <div className="flex flex-1 flex-col items-center bg-zinc-50 px-4 pt-6 pb-10 dark:bg-black sm:pt-8 sm:pb-16">
       <div className="w-full max-w-2xl rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-950 sm:p-8">
         <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
-          Today&apos;s Events
+          My Shifts
         </h1>
         <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-          Log in with your name and password to see what&apos;s on today and
-          tomorrow — event details and the run of show.
+          Log in with your name and password to see the shifts you&apos;re
+          rostered for, and what&apos;s on today and tomorrow.
         </p>
 
         <StaffAccessGate>

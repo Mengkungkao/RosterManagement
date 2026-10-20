@@ -1,13 +1,18 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { StaffAvailability } from "@/lib/sheets";
 import { DAYS, type Day } from "@/lib/availability";
-import { overlaps, toMinutes } from "@/lib/roster-grid";
+import { addDays } from "@/lib/dates";
+import { checkAvailability } from "@/lib/roster";
+import type { StaffMember } from "@/lib/staff";
 
 interface Props {
-  staff: StaffAvailability[];
+  staff: StaffMember[];
 }
+
+// Any Monday: availability repeats weekly, so the grid is computed for one
+// sample week. Overnight hours ("Mon 22:00–06:00") land on the next morning.
+const SAMPLE_MONDAY = "2026-01-05";
 
 interface HourCell {
   available: string[];
@@ -56,32 +61,20 @@ function formatHour(hour: number): string {
   return `${String(hour).padStart(2, "0")}:00`;
 }
 
-function buildHeatmap(staff: StaffAvailability[]): Heatmap {
+function buildHeatmap(staff: StaffMember[]): Heatmap {
   const heatmap = {} as Heatmap;
-  for (const day of DAYS) {
+  DAYS.forEach((day, d) => {
+    const date = addDays(SAMPLE_MONDAY, d);
     heatmap[day] = Array.from({ length: HOURS }, (_, hour) => {
-      const hourStart = hour * 60;
-      const hourEnd = hourStart + 60;
       const available: string[] = [];
       const unavailable: string[] = [];
-
       for (const person of staff) {
-        const d = person.week[day];
-        if (d.status === "unavailable") {
-          unavailable.push(person.staffName);
-          continue;
-        }
-        if (d.status === "available_all_day") {
-          available.push(person.staffName);
-          continue;
-        }
-        const isFree = overlaps(hourStart, hourEnd, toMinutes(d.startTime), toMinutes(d.endTime));
-        (isFree ? available : unavailable).push(person.staffName);
+        const { coverage } = checkAvailability(person.week, date, { start: hour * 60, end: hour * 60 + 60 });
+        (coverage === "none" ? unavailable : available).push(person.staffName);
       }
-
       return { available, unavailable };
     });
-  }
+  });
   return heatmap;
 }
 
@@ -93,7 +86,7 @@ export default function AvailabilityHeatmap({ staff }: Props) {
   const activeCell = active ? heatmap[active.day][active.hour] : null;
 
   return (
-    <div className="mt-6 flex flex-col gap-[22px] lg:flex-row">
+    <div className="mt-3 flex flex-col gap-[22px] lg:flex-row">
       <div className="w-full shrink-0 rounded-2xl border border-zinc-200 bg-white p-[18px] shadow-sm lg:w-[230px] dark:border-zinc-800 dark:bg-zinc-950">
         {activeCell && active ? (
           <>

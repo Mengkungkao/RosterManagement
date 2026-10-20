@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, ReactNode, useState } from "react";
+import { FormEvent, ReactNode, useEffect, useState } from "react";
 import { WeekAvailability, emptyWeek } from "@/lib/availability";
 
 // "idle": no name entered yet / not yet checked.
@@ -9,6 +9,8 @@ import { WeekAvailability, emptyWeek } from "@/lib/availability";
 // "existing": password-protected — user must enter it to unlock.
 // "unlocked": password confirmed (or just chosen) — children render.
 type AccessState = "idle" | "checking" | "new" | "existing" | "unlocked";
+
+const NAME_KEY = "roster-staff-name";
 
 export interface StaffAccessProps {
   name: string;
@@ -34,6 +36,17 @@ export default function StaffAccessGate({
   const [accessError, setAccessError] = useState<string | null>(null);
   const [initialWeek, setInitialWeek] = useState<WeekAvailability>(emptyWeek());
 
+  // Remembers the last name used on this device, so staff only type it once.
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(NAME_KEY);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (saved) setName(saved);
+    } catch {
+      // storage blocked (private mode) — just start empty
+    }
+  }, []);
+
   function reset() {
     setAccess("idle");
     setPassword("");
@@ -50,6 +63,11 @@ export default function StaffAccessGate({
   async function checkAccess() {
     const trimmed = name.trim();
     if (!trimmed) return;
+    try {
+      localStorage.setItem(NAME_KEY, trimmed);
+    } catch {
+      // not remembered — fine
+    }
     setAccess("checking");
     setAccessError(null);
     try {
@@ -112,27 +130,46 @@ export default function StaffAccessGate({
 
   return (
     <div className="mt-6">
-      <div>
+      <form
+        onSubmit={(e: FormEvent) => {
+          e.preventDefault();
+          checkAccess();
+        }}
+      >
         <label
           htmlFor="staff-name"
           className="block text-sm font-medium text-zinc-700 dark:text-zinc-300"
         >
           Your name
         </label>
-        <input
-          id="staff-name"
-          type="text"
-          value={name}
-          disabled={access !== "idle"}
-          onChange={(e) => setName(e.target.value)}
-          onBlur={checkAccess}
-          placeholder="e.g. Elon"
-          className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 outline-none focus:border-zinc-500 disabled:bg-zinc-100 disabled:text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:disabled:bg-zinc-900/60 dark:disabled:text-zinc-500"
-        />
+        <div className="mt-1 flex gap-2">
+          <input
+            id="staff-name"
+            type="text"
+            autoComplete="name"
+            value={name}
+            disabled={access !== "idle"}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Elon"
+            className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-base text-zinc-900 outline-none focus:border-zinc-500 disabled:bg-zinc-100 disabled:text-zinc-500 sm:text-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:disabled:bg-zinc-900/60 dark:disabled:text-zinc-500"
+          />
+          {access === "idle" && (
+            <button
+              type="submit"
+              disabled={!name.trim()}
+              className="shrink-0 rounded-lg bg-zinc-900 px-4 py-2 font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+            >
+              Continue
+            </button>
+          )}
+        </div>
         {access === "checking" && (
           <p className="mt-1 text-xs text-zinc-400">Checking…</p>
         )}
-      </div>
+        {access === "idle" && accessError && (
+          <p className="mt-1 text-xs text-red-600 dark:text-red-400">{accessError}</p>
+        )}
+      </form>
 
       {(access === "new" || access === "existing") && (
         <div className="mt-6 rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/60">
@@ -164,7 +201,7 @@ export default function StaffAccessGate({
                 setPassword(e.target.value);
                 setAccessError(null);
               }}
-              className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+              className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-base text-zinc-900 outline-none focus:border-zinc-500 sm:text-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
             />
             <button
               type="submit"

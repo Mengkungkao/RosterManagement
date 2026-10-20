@@ -1,7 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import type { Eventaction, EventRecord } from "@/lib/events";
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { formatWeekdayDate } from "@/lib/dates";
+import type { EventAction, EventRecord } from "@/lib/events";
+import { minCoverage } from "@/lib/roster";
+import { card, input, label, linkButton, messageClass, mutedText, primaryButton, secondaryButton } from "../../ui";
+import StaffingPill from "../StaffingPill";
 
 type Message = { type: "success" | "error"; text: string } | null;
 
@@ -12,48 +17,66 @@ const EMPTY_FORM = {
   endTime: "",
   location: "",
   notes: "",
-  actions: [] as Eventaction[],
+  actions: [] as EventAction[],
+  staffNeeded: 1,
+  setupHours: 1,
+  packDownHours: 1,
+  shareStaff: false,
 };
 
-export default function EventsManager() {
-  const [events, setEvents] = useState<EventRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+type Form = typeof EMPTY_FORM;
+
+function NumberField({
+  title,
+  value,
+  step,
+  max,
+  onChange,
+}: {
+  title: string;
+  value: number;
+  step: number;
+  max: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <label className="flex-1">
+      <span className={label}>{title}</span>
+      <input
+        type="number"
+        min={0}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className={`mt-1 w-full ${input}`}
+      />
+    </label>
+  );
+}
+
+export default function EventsManager({ events, today }: { events: EventRecord[]; today: string }) {
+  const router = useRouter();
+  const [refreshing, startRefresh] = useTransition();
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<Message>(null);
-  const [form, setForm] = useState(EMPTY_FORM);
+  const [form, setForm] = useState<Form>(EMPTY_FORM);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [showPast, setShowPast] = useState(false);
 
-  async function loadEvents() {
-    setLoading(true);
-    try {
-      const res = await fetch("/api/admin/events");
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to load events");
-      setEvents(data.events);
-    } catch {
-      setMessage({ type: "error", text: "Couldn't load events." });
-    } finally {
-      setLoading(false);
-    }
+  const past = events.filter((e) => e.date < today);
+  const shown = showPast ? events : events.filter((e) => e.date >= today);
+
+  function update<K extends keyof Form>(key: K, value: Form[K]) {
+    setForm((f) => ({ ...f, [key]: value }));
   }
 
-  useEffect(() => {
-    // Initial fetch on mount — intentional, not a render-driven sync.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadEvents();
-  }, []);
-
   function startEdit(event: EventRecord) {
+    const { id: _id, staff: _staff, ...details } = event;
     setEditingId(event.id);
-    setForm({
-      name: event.name,
-      date: event.date,
-      startTime: event.startTime,
-      endTime: event.endTime,
-      location: event.location,
-      notes: event.notes,
-      actions: event.actions,
-    });
+    setForm(details);
+    setMessage(null);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   function cancelEdit() {
@@ -61,170 +84,115 @@ export default function EventsManager() {
     setForm(EMPTY_FORM);
   }
 
-  function addaction() {
-    setForm({
-      ...form,
-      actions: [...form.actions, { label: "", time: "" }],
-    });
-  }
-
-  function updateaction(index: number, field: keyof Eventaction, value: string) {
-    setForm({
-      ...form,
-      actions: form.actions.map((p, i) => (i === index ? { ...p, [field]: value } : p)),
-    });
-  }
-
-  function removeaction(index: number) {
-    setForm({ ...form, actions: form.actions.filter((_, i) => i !== index) });
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!form.name.trim() || !form.date || !form.startTime || !form.endTime) {
-      setMessage({
-        type: "error",
-        text: "Name, date, start time, and end time are required.",
-      });
-      return;
-    }
-
+  async function send(url: string, method: string, body?: unknown): Promise<boolean> {
     setSaving(true);
     setMessage(null);
     try {
-      const res = await fetch(
-        editingId ? `/api/admin/events/${editingId}` : "/api/admin/events",
-        {
-          method: editingId ? "PUT" : "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(form),
-        }
-      );
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to save event");
-      setMessage({
-        type: "success",
-        text: editingId ? "Event updated." : "Event added.",
-      });
-      cancelEdit();
-      await loadEvents();
+      if (!res.ok) throw new Error(data.error || "Couldn't save");
+      startRefresh(() => router.refresh());
+      return true;
     } catch (err) {
-      setMessage({
-        type: "error",
-        text: err instanceof Error ? err.message : "Failed to save event",
-      });
+      setMessage({ type: "error", text: err instanceof Error ? err.message : "Couldn't save" });
+      return false;
     } finally {
       setSaving(false);
     }
   }
 
-  async function handleDelete(id: string) {
-    setMessage(null);
-    try {
-      const res = await fetch(`/api/admin/events/${id}`, { method: "DELETE" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to delete event");
-      if (editingId === id) cancelEdit();
-      await loadEvents();
-    } catch (err) {
-      setMessage({
-        type: "error",
-        text: err instanceof Error ? err.message : "Failed to delete event",
-      });
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.name.trim() || !form.date || !form.startTime || !form.endTime) {
+      setMessage({ type: "error", text: "Name, date, start and end time are required." });
+      return;
+    }
+    const ok = await send(
+      editingId ? `/api/admin/events/${encodeURIComponent(editingId)}` : "/api/admin/events",
+      editingId ? "PUT" : "POST",
+      form
+    );
+    if (ok) {
+      setMessage({ type: "success", text: editingId ? "Event updated." : "Event added." });
+      cancelEdit();
+    }
+  }
+
+  async function handleDelete(event: EventRecord) {
+    const rostered = event.staff.length > 0 ? ` ${event.staff.length} rostered staff will be taken off it.` : "";
+    if (!window.confirm(`Delete "${event.name}" on ${formatWeekdayDate(event.date)}?${rostered}`)) return;
+    if (await send(`/api/admin/events/${encodeURIComponent(event.id)}`, "DELETE")) {
+      if (editingId === event.id) cancelEdit();
+      setMessage({ type: "success", text: "Event deleted." });
     }
   }
 
   return (
-    <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,360px)_1fr]">
-      <form
-        onSubmit={handleSubmit}
-        className="h-fit rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-950"
-      >
-        <h2 className="font-medium text-zinc-900 dark:text-zinc-50">
-          {editingId ? "Edit event" : "Add event"}
-        </h2>
+    <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,380px)_1fr]">
+      <form onSubmit={handleSubmit} className={`h-fit p-6 ${card}`}>
+        <h2 className="font-medium text-zinc-900 dark:text-zinc-50">{editingId ? "Edit event" : "Add event"}</h2>
 
         <div className="mt-4 space-y-3">
-          <div>
-            <label className="block text-sm text-zinc-600 dark:text-zinc-400">
-              Event name
+          <label className="block">
+            <span className={label}>Event name</span>
+            <input value={form.name} onChange={(e) => update("name", e.target.value)} className={`mt-1 w-full ${input}`} />
+          </label>
+          <label className="block">
+            <span className={label}>Date</span>
+            <input type="date" value={form.date} onChange={(e) => update("date", e.target.value)} className={`mt-1 w-full ${input}`} />
+          </label>
+          <div className="flex gap-2">
+            <label className="flex-1">
+              <span className={label}>Starts</span>
+              <input type="time" value={form.startTime} onChange={(e) => update("startTime", e.target.value)} className={`mt-1 w-full ${input}`} />
             </label>
-            <input
-              type="text"
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
-            />
-          </div>
-          <div>
-            <label className="block text-sm text-zinc-600 dark:text-zinc-400">
-              Date
+            <label className="flex-1">
+              <span className={label}>Ends</span>
+              <input type="time" value={form.endTime} onChange={(e) => update("endTime", e.target.value)} className={`mt-1 w-full ${input}`} />
             </label>
-            <input
-              type="date"
-              value={form.date}
-              onChange={(e) => setForm({ ...form, date: e.target.value })}
-              className="mt-1 w-max rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
-            />
           </div>
           <div className="flex gap-2">
-            <div className="flex-1">
-              <label className="block text-sm text-zinc-600 dark:text-zinc-400">
-                Start
-              </label>
-              <input
-                type="time"
-                value={form.startTime}
-                onChange={(e) => setForm({ ...form, startTime: e.target.value })}
-                className="mt-1 w-max rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
-              />
-            </div>
-            <div className="flex-1">
-              <label className="block text-sm text-zinc-600 dark:text-zinc-400">
-                End
-              </label>
-              <input
-                type="time"
-                value={form.endTime}
-                onChange={(e) => setForm({ ...form, endTime: e.target.value })}
-                className="mt-1 w-max rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
-              />
-            </div>
+            <NumberField title="Staff needed" value={form.staffNeeded} step={1} max={100} onChange={(v) => update("staffNeeded", v)} />
+            <NumberField title="Setup (h)" value={form.setupHours} step={0.25} max={12} onChange={(v) => update("setupHours", v)} />
+            <NumberField title="Pack-down (h)" value={form.packDownHours} step={0.25} max={12} onChange={(v) => update("packDownHours", v)} />
           </div>
-          <div>
-            <label className="block text-sm text-zinc-600 dark:text-zinc-400">
-              Location
-            </label>
+          <p className={`text-xs ${mutedText}`}>
+            Staff work from setup to pack-down: an event 18:00–22:00 with 1h each way is a 17:00–23:00 shift.
+            Shifts over 6h include an unpaid 30-minute break; a shift longer than 12h of work is split into early
+            and late shifts.
+          </p>
+          <label className="flex items-start gap-2 text-sm text-zinc-700 dark:text-zinc-300">
             <input
-              type="text"
-              value={form.location}
-              onChange={(e) => setForm({ ...form, location: e.target.value })}
-              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+              type="checkbox"
+              checked={form.shareStaff}
+              onChange={(e) => update("shareStaff", e.target.checked)}
+              className="mt-0.5 h-4 w-4"
             />
-          </div>
-          <div>
-            <label className="block text-sm text-zinc-600 dark:text-zinc-400">
-              Notes (optional)
-            </label>
-            <textarea
-              value={form.notes}
-              onChange={(e) => setForm({ ...form, notes: e.target.value })}
-              rows={2}
-              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
-            />
-          </div>
+            <span>
+              Staff can also work other functions at the same time
+              <span className={`block text-xs ${mutedText}`}>
+                e.g. a Studio 1 function covered by the Great Room team. Their time is only counted once.
+              </span>
+            </span>
+          </label>
+          <label className="block">
+            <span className={label}>Location</span>
+            <input value={form.location} onChange={(e) => update("location", e.target.value)} className={`mt-1 w-full ${input}`} />
+          </label>
+          <label className="block">
+            <span className={label}>Notes (optional)</span>
+            <textarea value={form.notes} onChange={(e) => update("notes", e.target.value)} rows={2} className={`mt-1 w-full ${input}`} />
+          </label>
 
           <div>
             <div className="flex items-center justify-between">
-              <label className="block text-sm text-zinc-600 dark:text-zinc-400">
-                actions (optional)
-              </label>
-              <button
-                type="button"
-                onClick={addaction}
-                className="text-sm text-zinc-600 underline hover:no-underline dark:text-zinc-400"
-              >
-                + Add action
+              <span className={label}>Run of show (optional)</span>
+              <button type="button" onClick={() => update("actions", [...form.actions, { label: "", time: "" }])} className={linkButton}>
+                + Add step
               </button>
             </div>
             {form.actions.length > 0 && (
@@ -234,21 +202,24 @@ export default function EventsManager() {
                     <input
                       type="time"
                       value={action.time}
-                      onChange={(e) => updateaction(index, "time", e.target.value)}
-                      className="w-max rounded-lg border border-zinc-300 px-2 py-1.5 text-sm text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+                      onChange={(e) =>
+                        update("actions", form.actions.map((a, i) => (i === index ? { ...a, time: e.target.value } : a)))
+                      }
+                      className={`w-28 ${input}`}
                     />
                     <input
-                      type="text"
-                      placeholder={`Activity ${index + 1} e.g. Entree serve`}
+                      placeholder="e.g. Entree serve"
                       value={action.label}
-                      onChange={(e) => updateaction(index, "label", e.target.value)}
-                      className="flex-1 rounded-lg border border-zinc-300 px-2 py-1.5 text-sm text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+                      onChange={(e) =>
+                        update("actions", form.actions.map((a, i) => (i === index ? { ...a, label: e.target.value } : a)))
+                      }
+                      className={`min-w-0 flex-1 ${input}`}
                     />
                     <button
                       type="button"
-                      onClick={() => removeaction(index)}
+                      onClick={() => update("actions", form.actions.filter((_, i) => i !== index))}
                       className="px-2 text-zinc-400 hover:text-red-600 dark:hover:text-red-400"
-                      aria-label="Remove action"
+                      aria-label="Remove step"
                     >
                       ✕
                     </button>
@@ -259,106 +230,88 @@ export default function EventsManager() {
           </div>
         </div>
 
-        {message && (
-          <p
-            className={`mt-3 text-sm ${
-              message.type === "success"
-                ? "text-emerald-600 dark:text-emerald-400"
-                : "text-red-600 dark:text-red-400"
-            }`}
-          >
-            {message.text}
-          </p>
-        )}
+        {message && <p className={`mt-3 text-sm ${messageClass(message.type)}`}>{message.text}</p>}
 
         <div className="mt-4 flex gap-2">
-          <button
-            type="submit"
-            disabled={saving}
-            className="flex-1 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-          >
+          <button type="submit" disabled={saving} className={`flex-1 ${primaryButton}`}>
             {saving ? "Saving…" : editingId ? "Save changes" : "Add event"}
           </button>
           {editingId && (
-            <button
-              type="button"
-              onClick={cancelEdit}
-              className="rounded-lg border border-zinc-300 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
-            >
+            <button type="button" onClick={cancelEdit} className={secondaryButton}>
               Cancel
             </button>
           )}
         </div>
       </form>
 
-      <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-        {loading ? (
-          <p className="p-6 text-sm text-zinc-500 dark:text-zinc-400">Loading…</p>
-        ) : events.length === 0 ? (
-          <p className="p-6 text-sm text-zinc-500 dark:text-zinc-400">
-            No events yet.
-          </p>
+      <div className={`overflow-x-auto ${card}`}>
+        <div className="flex items-center justify-between gap-3 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
+          <h2 className="font-medium text-zinc-900 dark:text-zinc-50">
+            {showPast ? "All events" : "Upcoming events"}
+            {refreshing && <span className={`ml-2 text-sm font-normal ${mutedText}`}>updating…</span>}
+          </h2>
+          {past.length > 0 && (
+            <button type="button" onClick={() => setShowPast(!showPast)} className={linkButton}>
+              {showPast ? "Hide past events" : `Show past events (${past.length})`}
+            </button>
+          )}
+        </div>
+        {shown.length === 0 ? (
+          <p className={`p-6 text-sm ${mutedText}`}>No upcoming events — add one with the form.</p>
         ) : (
-          <table className="w-full min-w-[640px] border-collapse text-sm">
+          <table className="w-full min-w-[640px] text-sm">
             <thead>
-              <tr className="border-b border-zinc-200 text-left dark:border-zinc-800">
-                <th className="px-4 py-3 font-medium text-zinc-600 dark:text-zinc-400">
-                  Event
-                </th>
-                <th className="px-4 py-3 font-medium text-zinc-600 dark:text-zinc-400">
-                  Date
-                </th>
-                <th className="px-4 py-3 font-medium text-zinc-600 dark:text-zinc-400">
-                  Time
-                </th>
-                <th className="px-4 py-3 font-medium text-zinc-600 dark:text-zinc-400">
-                  Location
-                </th>
-                <th className="px-4 py-3 font-medium text-zinc-600 dark:text-zinc-400" />
+              <tr className={`border-b border-zinc-200 text-left dark:border-zinc-800 ${mutedText}`}>
+                <th className="px-4 py-2.5 font-medium">Event</th>
+                <th className="px-4 py-2.5 font-medium">When</th>
+                <th className="px-4 py-2.5 font-medium">Staff</th>
+                <th className="px-4 py-2.5 font-medium" />
               </tr>
             </thead>
             <tbody>
-              {events.map((event) => (
+              {shown.map((event) => (
                 <tr
                   key={event.id}
-                  className="border-b border-zinc-100 last:border-0 dark:border-zinc-900"
+                  className={`border-b border-zinc-100 last:border-0 dark:border-zinc-900 ${
+                    event.date < today ? "opacity-60" : ""
+                  } ${editingId === event.id ? "bg-zinc-50 dark:bg-zinc-900" : ""}`}
                 >
-                  <td className="px-4 py-3 align-top font-medium text-zinc-800 dark:text-zinc-200">
-                    {event.name}
+                  <td className="px-4 py-3 align-top">
+                    <div className="font-medium text-zinc-800 dark:text-zinc-200">{event.name}</div>
+                    {event.location && <div className={`text-xs ${mutedText}`}>{event.location}</div>}
                     {event.actions.length > 0 && (
-                      <ul className="mt-1 space-y-0.5 text-xs font-normal text-zinc-500 dark:text-zinc-400">
+                      <ul className={`mt-1 space-y-0.5 text-xs ${mutedText}`}>
                         {event.actions.map((action, i) => (
                           <li key={i}>
-                            {action.time && (
-                              <span className="tabular-nums">{action.time} </span>
-                            )}
+                            {action.time && <span className="tabular-nums">{action.time} </span>}
                             {action.label}
                           </li>
                         ))}
                       </ul>
                     )}
                   </td>
-                  <td className="px-4 py-3 align-top whitespace-nowrap text-zinc-600 dark:text-zinc-400">
-                    {event.date}
+                  <td className="px-4 py-3 align-top whitespace-nowrap text-zinc-600 tabular-nums dark:text-zinc-400">
+                    {formatWeekdayDate(event.date)}
+                    <div>
+                      {event.startTime}–{event.endTime}
+                    </div>
                   </td>
-                  <td className="px-4 py-3 align-top whitespace-nowrap text-zinc-600 dark:text-zinc-400">
-                    {event.startTime}–{event.endTime}
+                  <td className="px-4 py-3 align-top">
+                    <StaffingPill filled={minCoverage(event)} needed={event.staffNeeded} />
+                    {event.shareStaff && <span className={`ml-1 text-xs ${mutedText}`}>shares staff</span>}
+                    {event.staff.length > 0 && (
+                      <div className={`mt-1 text-xs ${mutedText}`}>{event.staff.map((s) => s.name).join(", ")}</div>
+                    )}
                   </td>
-                  <td className="px-4 py-3 align-top text-zinc-600 dark:text-zinc-400">
-                    {event.location || "—"}
-                  </td>
-                  <td className="px-4 py-3 align-top whitespace-nowrap text-right">
-                    <button
-                      type="button"
-                      onClick={() => startEdit(event)}
-                      className="mr-3 text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
-                    >
+                  <td className="px-4 py-3 text-right align-top whitespace-nowrap">
+                    <button type="button" onClick={() => startEdit(event)} className={`mr-3 ${linkButton}`}>
                       Edit
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleDelete(event.id)}
-                      className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                      onClick={() => handleDelete(event)}
+                      disabled={saving}
+                      className="text-sm text-red-600 hover:text-red-800 disabled:opacity-50 dark:text-red-400 dark:hover:text-red-300"
                     >
                       Delete
                     </button>

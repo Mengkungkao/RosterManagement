@@ -1,46 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAdminRequest } from "@/lib/admin-auth";
 import { createEvent, listEvents, parseEventInput } from "@/lib/events";
+import { badRequest, readJson, serverError, unauthorized } from "@/lib/http";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  if (!(await isAdminRequest())) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  if (!(await isAdminRequest())) return unauthorized();
   try {
-    const events = await listEvents();
-    return NextResponse.json({ events });
+    return NextResponse.json({ events: await listEvents() });
   } catch (err) {
-    console.error("Failed to load events", err);
-    return NextResponse.json({ error: "Failed to load events" }, { status: 500 });
+    return serverError("load events", err);
   }
 }
 
 export async function POST(req: NextRequest) {
-  if (!(await isAdminRequest())) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  let body: unknown;
+  if (!(await isAdminRequest())) return unauthorized();
+  const input = parseEventInput(await readJson(req));
+  if (typeof input === "string") return badRequest(input);
   try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
-  }
-
-  const input = parseEventInput(body);
-  if (!input) {
-    return NextResponse.json({ error: "Invalid event data" }, { status: 400 });
-  }
-
-  try {
-    const event = await createEvent(input);
-    return NextResponse.json({ event });
+    return NextResponse.json({ event: await createEvent(input) });
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Failed to create event" },
-      { status: 400 }
-    );
+    return serverError("create event", err);
   }
 }

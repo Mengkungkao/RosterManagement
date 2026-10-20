@@ -1,164 +1,67 @@
-import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
-import { ADMIN_COOKIE_NAME, isAdminSessionValid } from "@/lib/admin-auth";
-import { readAllAvailability, StaffAvailability } from "@/lib/sheets";
-import { DAYS, DayStatus } from "@/lib/availability";
-import AdminControls from "./AdminControls";
-import AdminNav from "./AdminNav";
-import AvailabilityHeatmap from "./AvailabilityHeatmap";
+import { requireAdmin } from "@/lib/admin-auth";
+import { addDays, fortnightStartFor } from "@/lib/dates";
+import { type EventRecord, listEvents } from "@/lib/events";
+import { DEFAULT_SETTINGS, type PaySettings } from "@/lib/settings";
+import { readSettings } from "@/lib/settings-sheet";
+import { type StaffMember, readAllStaff } from "@/lib/staff";
+import AdminFrame, { errorMessage } from "./AdminFrame";
+import FortnightNav from "./FortnightNav";
+import RosterBoard from "./RosterBoard";
+import { pickFortnight } from "./fortnight";
 
 export const dynamic = "force-dynamic";
 
-function badgeClasses(status: DayStatus) {
-  if (status === "available_all_day") {
-    return "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300";
-  }
-  if (status === "custom") {
-    return "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300";
-  }
-  return "bg-zinc-100 text-zinc-500 dark:bg-zinc-900 dark:text-zinc-500";
-}
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
-function formatUpdatedAt(value: string) {
-  return value || "—";
-}
+export default async function RosterPage({ searchParams }: { searchParams: SearchParams }) {
+  await requireAdmin();
 
-function statusBadgeClasses(status: string) {
-  if (status === "Fully available") {
-    return "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300";
-  }
-  if (status === "Partially available") {
-    return "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300";
-  }
-  return "bg-zinc-100 text-zinc-500 dark:bg-zinc-900 dark:text-zinc-500";
-}
-
-export default async function AdminPage() {
-  const cookieStore = await cookies();
-  const sessionCookie = cookieStore.get(ADMIN_COOKIE_NAME)?.value;
-  if (!isAdminSessionValid(sessionCookie)) {
-    redirect("/admin/login");
-  }
-
-  let staff: StaffAvailability[] = [];
+  let events: EventRecord[] = [];
+  let staff: StaffMember[] = [];
+  let settings: PaySettings = DEFAULT_SETTINGS;
   let loadError: string | null = null;
   try {
-    staff = await readAllAvailability();
+    [events, staff, settings] = await Promise.all([listEvents(), readAllStaff(), readSettings()]);
   } catch (err) {
-    loadError =
-      err instanceof Error ? err.message : "Failed to load availability data";
+    loadError = errorMessage(err);
   }
 
+  const { today, currentFortnight, fortnightStart } = pickFortnight(
+    (await searchParams).fortnight,
+    settings.fortnightStart
+  );
+  // A day either side as well, so overnight shifts next to the fortnight still show as clashes.
+  const nearby = events.filter(
+    (e) => e.date >= addDays(fortnightStart, -1) && e.date <= addDays(fortnightStart, 14)
+  );
+  // Shown when this fortnight has no events, as a shortcut to the next one.
+  const upcoming = events.find((e) => e.date >= today);
+  const nextEvent = upcoming
+    ? {
+        date: upcoming.date,
+        name: upcoming.name,
+        href: `/admin?fortnight=${fortnightStartFor(upcoming.date, settings.fortnightStart)}`,
+      }
+    : null;
+
   return (
-    <div className="flex flex-1 flex-col bg-zinc-50 px-4 pt-6 pb-10 dark:bg-black sm:pt-8 sm:pb-16">
-      <div className="mx-auto w-full max-w-6xl">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
-              Staff Availability
-            </h1>
-            <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-              {staff.length} {staff.length === 1 ? "person has" : "people have"}{" "}
-              submitted availability.
-            </p>
-          </div>
-          <AdminControls />
-        </div>
-        <AdminNav />
-
-        {loadError && (
-          <div className="mt-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
-            Couldn&apos;t load data from Google Sheets: {loadError}
-          </div>
-        )}
-
-        {!loadError && staff.length === 0 && (
-          <div className="mt-6 rounded-lg border border-zinc-200 bg-white p-6 text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400">
-            No submissions yet.
-          </div>
-        )}
-
-        {!loadError && staff.length > 0 && (
-          <>
-            <AvailabilityHeatmap staff={staff} />
-
-            <details className="mt-6">
-              <summary className="cursor-pointer text-sm font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50">
-                Show per-person table
-              </summary>
-              <div className="mt-3 overflow-x-auto rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-                <table className="w-full min-w-[900px] border-collapse text-sm">
-                  <thead>
-                    <tr className="border-b border-zinc-200 text-left dark:border-zinc-800">
-                      <th className="px-4 py-3 font-medium text-zinc-600 dark:text-zinc-400">
-                        No
-                      </th>
-                      <th className="sticky left-0 z-10 bg-white px-4 py-3 font-medium text-zinc-600 dark:bg-zinc-950 dark:text-zinc-400">
-                        Name
-                      </th>
-                      <th className="px-4 py-3 font-medium text-zinc-600 dark:text-zinc-400">
-                        Status
-                      </th>
-                      {DAYS.map((day) => (
-                        <th
-                          key={day}
-                          className="px-3 py-3 font-medium text-zinc-600 dark:text-zinc-400"
-                        >
-                          {day.slice(0, 3)}
-                        </th>
-                      ))}
-                      <th className="px-4 py-3 font-medium text-zinc-600 dark:text-zinc-400">
-                        Updated
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {staff.map((person, index) => (
-                      <tr
-                        key={person.staffName}
-                        className="border-b border-zinc-100 last:border-0 dark:border-zinc-900"
-                      >
-                        <td className="px-4 py-3 whitespace-nowrap text-zinc-500 dark:text-zinc-400">
-                          {index + 1}
-                        </td>
-                        <td className="sticky left-0 z-10 whitespace-nowrap bg-white px-4 py-3 font-medium text-zinc-800 dark:bg-zinc-950 dark:text-zinc-200">
-                          {person.staffName}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span
-                            className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium whitespace-nowrap ${statusBadgeClasses(person.status)}`}
-                          >
-                            {person.status}
-                          </span>
-                        </td>
-                        {DAYS.map((day) => {
-                          const d = person.week[day];
-                          return (
-                            <td key={day} className="px-3 py-3">
-                              <span
-                                className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium whitespace-nowrap ${badgeClasses(d.status)}`}
-                              >
-                                {d.status === "available_all_day"
-                                  ? "All day"
-                                  : d.status === "custom"
-                                    ? `${d.startTime}–${d.endTime}`
-                                    : "Off"}
-                              </span>
-                            </td>
-                          );
-                        })}
-                        <td className="px-4 py-3 whitespace-nowrap text-zinc-500 dark:text-zinc-400">
-                          {formatUpdatedAt(person.updatedAt)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </details>
-          </>
-        )}
-      </div>
-    </div>
+    <AdminFrame
+      title="Roster"
+      description="Who works each event, by pay fortnight. Click an event to add or remove people, or let Auto-fill choose within everyone's hours."
+      loadError={loadError}
+    >
+      <RosterBoard
+        key={fortnightStart}
+        events={nearby}
+        staff={staff}
+        fortnightStart={fortnightStart}
+        anchor={settings.fortnightStart}
+        today={today}
+        nextEvent={nextEvent}
+        nav={
+          <FortnightNav basePath="/admin" fortnightStart={fortnightStart} currentFortnight={currentFortnight} />
+        }
+      />
+    </AdminFrame>
   );
 }
