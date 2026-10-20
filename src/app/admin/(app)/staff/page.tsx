@@ -1,50 +1,58 @@
+import type { Metadata } from "next";
 import { requireAdmin } from "@/lib/admin-auth";
-import { type AppData, loadAll } from "@/lib/config-sheet";
-import { melbourneToday } from "@/lib/dates";
-import AdminFrame, { errorMessage } from "../AdminFrame";
-import AvailabilityHeatmap from "../AvailabilityHeatmap";
-import StaffManager from "./StaffManager";
+import type { AppData } from "@/lib/config-sheet";
+import { getData } from "@/lib/data";
+import { fortnightStartFor, melbourneToday } from "@/lib/dates";
+import { rosterHref } from "@/lib/overview";
+import { eventsInRange, formatWindow, listShifts, summarizeHours } from "@/lib/roster";
+import { LoadError, errorMessage } from "@/components/shell/PageHeader";
+import StaffDirectory from "@/components/staff/StaffDirectory";
+import type { UpcomingShift } from "@/components/staff/StaffProfile";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "Staff" };
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
-export default async function AdminStaffPage({ searchParams }: { searchParams: SearchParams }) {
+export default async function StaffPage({ searchParams }: { searchParams: SearchParams }) {
   await requireAdmin();
-
-  let data: AppData | null = null;
-  let loadError: string | null = null;
+  let data: AppData;
   try {
-    data = await loadAll();
+    data = await getData();
   } catch (err) {
-    loadError = errorMessage(err);
+    return <LoadError message={errorMessage(err)} />;
   }
-  const params = await searchParams;
-  const active = data?.staff.filter((s) => s.active) ?? [];
+  const { person } = await searchParams;
+  const today = melbourneToday();
+  const anchor = data.settings.fortnightStart;
+  const fortnightStart = fortnightStartFor(today, anchor);
+  const shifts = listShifts(data.events);
+  const hours = summarizeHours(data.staff, shifts, fortnightStart);
+
+  // Each person's shifts for the next two weeks, for their profile.
+  const upcoming: Record<string, UpcomingShift[]> = {};
+  const soon = eventsInRange(data.events, today, 14);
+  for (const s of listShifts(soon).sort((a, b) => a.absStart - b.absStart)) {
+    const event = soon.find((e) => e.id === s.eventId)!;
+    (upcoming[s.staffName.trim().toLowerCase()] ??= []).push({
+      date: s.date,
+      time: formatWindow(s),
+      eventName: s.eventName,
+      taskName: s.taskName,
+      href: rosterHref(fortnightStartFor(s.date, anchor), s.eventId, s.taskId),
+      draft: event.status === "draft",
+    });
+  }
 
   return (
-    <AdminFrame
-      title="Staff"
-      description={`${active.length} active staff. Open a profile to record skills and qualifications, restrictions and shift preferences.`}
-      loadError={loadError}
-    >
-      {data && (
-        <>
-          <StaffManager
-            staff={data.staff}
-            skills={data.skills}
-            rates={data.settings.awardRates}
-            today={melbourneToday()}
-            initialPerson={typeof params.person === "string" ? params.person : null}
-          />
-          {active.length > 0 && (
-            <section className="mt-8">
-              <h2 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Who&apos;s free when</h2>
-              <AvailabilityHeatmap staff={active} />
-            </section>
-          )}
-        </>
-      )}
-    </AdminFrame>
+    <StaffDirectory
+      staff={data.staff}
+      skills={data.skills}
+      rates={data.settings.awardRates}
+      hours={hours}
+      shifts={upcoming}
+      today={today}
+      initialPerson={typeof person === "string" ? person : null}
+    />
   );
 }

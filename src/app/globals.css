@@ -1,26 +1,144 @@
 @import "tailwindcss";
 
+/*
+ * Design tokens. Every colour in the app comes from these, so light and dark
+ * stay consistent: canvas (page) → surface (panels) → surface-2/3 (subtle
+ * fills); line for borders; fg / fg-2 / muted / subtle for text; one primary
+ * (deep blue); success, warning and danger for status (always with text or an
+ * icon, never colour alone).
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+  --canvas: #f5f6f8;
+  --surface: #ffffff;
+  --surface-2: #f8f9fb;
+  --surface-3: #eef0f4;
+  --line: #e4e7ec;
+  --line-strong: #cfd4dc;
+  --fg: #101828;
+  --fg-2: #344054;
+  --muted: #5d6676;
+  --subtle: #8b94a3;
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --primary: #1e40af;
+  --primary-hover: #1a3794;
+  --primary-fg: #ffffff;
+  --primary-soft: #edf2fd;
+  --primary-text: #1e40af;
+  --ring: rgb(30 64 175 / 0.35);
+
+  --success: #067647;
+  --success-soft: #ecfdf3;
+  --success-line: #abefc6;
+  --warning: #9a4a07;
+  --warning-soft: #fffaeb;
+  --warning-line: #fedf89;
+  --danger: #b42318;
+  --danger-soft: #fef3f2;
+  --danger-line: #fecdca;
+
+  --shadow-card: 0 1px 2px rgb(16 24 40 / 0.05);
+  --shadow-pop: 0 12px 32px -8px rgb(16 24 40 / 0.18), 0 2px 6px rgb(16 24 40 / 0.06);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --canvas: #0c0e12;
+    --surface: #13161c;
+    --surface-2: #171b22;
+    --surface-3: #1f242d;
+    --line: #262b35;
+    --line-strong: #363d4a;
+    --fg: #eceef2;
+    --fg-2: #c9ced8;
+    --muted: #9aa2b1;
+    --subtle: #6f7787;
+
+    --primary: #3b6ce0;
+    --primary-hover: #4f7ce8;
+    --primary-fg: #ffffff;
+    --primary-soft: #18223a;
+    --primary-text: #9db8ff;
+    --ring: rgb(120 155 255 / 0.45);
+
+    --success: #5fd49a;
+    --success-soft: #0f2a1d;
+    --success-line: #1f5138;
+    --warning: #fbbf4a;
+    --warning-soft: #2b2009;
+    --warning-line: #5a420f;
+    --danger: #ff8a80;
+    --danger-soft: #2e1412;
+    --danger-line: #5e2620;
+
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4);
+    --shadow-pop: 0 12px 32px -8px rgb(0 0 0 / 0.6), 0 2px 6px rgb(0 0 0 / 0.3);
   }
 }
 
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-fg: var(--fg);
+  --color-fg-2: var(--fg-2);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-fg: var(--primary-fg);
+  --color-primary-soft: var(--primary-soft);
+  --color-primary-text: var(--primary-text);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-success-line: var(--success-line);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-warning-line: var(--warning-line);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-danger-line: var(--danger-line);
+  --shadow-card: var(--shadow-card);
+  --shadow-pop: var(--shadow-pop);
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+html {
+  background: var(--canvas);
+  color: var(--fg);
+  color-scheme: light dark;
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--canvas);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-feature-settings: "cv11", "ss01";
+}
+
+/* One visible focus style everywhere (not on panels focused by script). */
+:where(a, button, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* Hatched fills for gaps on the timeline (paired with text, not colour alone). */
+.hatch-danger {
+  background-image: repeating-linear-gradient(135deg, var(--danger-line) 0 6px, transparent 6px 12px);
+}
+.hatch-warning {
+  background-image: repeating-linear-gradient(135deg, var(--warning-line) 0 6px, transparent 6px 12px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
 }

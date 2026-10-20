@@ -47,7 +47,8 @@ import { DEFAULT_MATCHING, type MatchingSettings } from "./settings";
 import {
   type SkillDef,
   type StaffSkills,
-  SKILL_LEVEL_LABELS,
+  NOT_YET,
+  RECORD_LEVEL_LABELS,
   currentSkill,
   levelRank,
   skillName,
@@ -588,7 +589,7 @@ function canOverlap(other: Shift, event: EventRecord, task: EventTask): boolean 
   return (other.shared || event.shareStaff) && !other.critical && !isSafetyCritical(task);
 }
 
-const levelName = (level: string) => SKILL_LEVEL_LABELS[level as keyof typeof SKILL_LEVEL_LABELS] ?? level;
+const levelName = (level: string) => RECORD_LEVEL_LABELS[level as keyof typeof RECORD_LEVEL_LABELS] ?? level;
 
 // Every check for `person` working `task` at `window`. `ignore` is the
 // person's own shift being re-checked, so it doesn't clash with itself.
@@ -677,7 +678,9 @@ function assess(
           ? `${label} not verified (${needs})`
           : state.reason === "expired"
             ? `${label} check due since ${state.expiresOn} (${needs})`
-            : `${label}: ${levelName(state.level!)} (${needs})`;
+            : state.reason === "not_competent"
+              ? `${label}: assessed as not yet competent (${needs})`
+              : `${label}: ${levelName(state.level!)} (${needs})`;
       add("skill", text, !isSafetyCritical(task));
     }
   }
@@ -729,7 +732,7 @@ function fitFor(
   const reasons: string[] = [];
   if (task.skillId) {
     const record = currentSkill(person.skills?.[task.skillId], event.date);
-    if (record) {
+    if (record && record.level !== NOT_YET) {
       const label = skillName(ctx.skills, task.skillId);
       if (levelRank(record.level) >= levelRank("experienced")) {
         if (ctx.matching.preferExperienced) fit++;
@@ -966,8 +969,11 @@ export function eventStaffing(event: EventRecord, statuses: TaskStatus[]): Event
   };
 }
 
+export type IssueCode = ProblemCode | "not_on_list" | "controls" | "team" | "supervisor" | "gap";
+
 export interface Issue {
   severity: "warning" | "info";
+  code: IssueCode;
   text: string;
   taskId?: string;
   staffName?: string;
@@ -979,35 +985,33 @@ const isGeneral = (task: EventTask) => task.id === GENERAL_TASK_ID && task.typeI
 export function eventIssues(event: EventRecord, statuses: TaskStatus[]): Issue[] {
   const warnings: Issue[] = [];
   const infos: Issue[] = [];
+  const warn = (code: IssueCode, text: string, taskId?: string, staffName?: string) =>
+    warnings.push({ severity: "warning", code, text, ...(taskId ? { taskId } : {}), ...(staffName ? { staffName } : {}) });
   for (const s of statuses) {
     const on = isGeneral(s.task) ? "" : ` ${s.task.name}`;
     for (const c of s.entries) {
       const who = c.entry.name;
-      if (!c.onStaffList) warnings.push({ severity: "warning", text: `${who} is not on the staff list`, staffName: who });
+      if (!c.onStaffList) warn("not_on_list", `${who} is not on the staff list`, undefined, who);
       for (const p of c.problems) {
         const text = p.code === "unavailable" ? `${who} isn't available for all of ${formatWindow(c.window)}` : clashText(who, p);
         if (p.overridable && c.entry.override) {
-          infos.push({ severity: "info", text: `${text} — rostered anyway: “${c.entry.override}”`, taskId: s.task.id, staffName: who });
+          infos.push({ severity: "info", code: p.code, text: `${text} — rostered anyway: “${c.entry.override}”`, taskId: s.task.id, staffName: who });
         } else {
-          warnings.push({ severity: "warning", text: p.overridable ? text : `${text} — can't work${on || " this"}`, taskId: s.task.id, staffName: who });
+          warn(p.code, p.overridable ? text : `${text} — can't work${on || " this"}`, s.task.id, who);
         }
       }
     }
-    if (s.needsControls) {
-      warnings.push({ severity: "warning", text: `${s.task.name}: confirm the safety controls are in place (${s.task.controls})`, taskId: s.task.id });
-    }
+    if (s.needsControls) warn("controls", `${s.task.name}: confirm the safety controls are in place (${s.task.controls})`, s.task.id);
     for (const gap of s.unsafe) {
-      warnings.push({ severity: "warning", text: `${s.task.name} is done as a team of ${s.task.minTeam} — not enough people on at ${formatWindow(gap)}`, taskId: s.task.id });
+      warn("team", `${s.task.name} is done as a team of ${s.task.minTeam} — not enough people on at ${formatWindow(gap)}`, s.task.id);
     }
     for (const gap of s.needsSupervisor) {
-      warnings.push({ severity: "warning", text: `${s.task.name} needs a supervisor or team leader on the event at ${formatWindow(gap)}`, taskId: s.task.id });
+      warn("supervisor", `${s.task.name} needs a supervisor or team leader on the event at ${formatWindow(gap)}`, s.task.id);
     }
     // When enough people are listed but their times leave a gap (the
     // staffing count shows the rest).
     if (s.people >= s.task.count && s.task.count > 0) {
-      for (const gap of s.gaps) {
-        warnings.push({ severity: "warning", text: `Fewer than ${s.task.count} on${on} at ${formatWindow(gap)}`, taskId: s.task.id });
-      }
+      for (const gap of s.gaps) warn("gap", `Fewer than ${s.task.count} on${on} at ${formatWindow(gap)}`, s.task.id);
     }
   }
   return [...warnings, ...infos];

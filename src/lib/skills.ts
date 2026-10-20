@@ -18,13 +18,27 @@ export const SKILL_LEVEL_LABELS: Record<SkillLevel, string> = {
   qualified: "Qualified / authorised",
 };
 
-// Higher is more capable; 0 is "not verified".
-export function levelRank(level: SkillLevel | "" | null | undefined): number {
-  return level ? SKILL_LEVELS.indexOf(level) + 1 : 0;
+// A record can also say someone was assessed and isn't competent yet. That is
+// different from nothing on file ("not verified"), though neither counts.
+export const NOT_YET = "not_yet";
+export type RecordLevel = SkillLevel | typeof NOT_YET;
+export const RECORD_LEVELS: RecordLevel[] = [NOT_YET, ...SKILL_LEVELS];
+export const RECORD_LEVEL_LABELS: Record<RecordLevel, string> = {
+  not_yet: "Not yet competent",
+  ...SKILL_LEVEL_LABELS,
+};
+
+// Higher is more capable; 0 is "not verified" or "not yet competent".
+export function levelRank(level: RecordLevel | "" | null | undefined): number {
+  return level && level !== NOT_YET ? SKILL_LEVELS.indexOf(level) + 1 : 0;
 }
 
 export function isSkillLevel(value: unknown): value is SkillLevel {
   return typeof value === "string" && (SKILL_LEVELS as readonly string[]).includes(value);
+}
+
+export function isRecordLevel(value: unknown): value is RecordLevel {
+  return value === NOT_YET || isSkillLevel(value);
 }
 
 export type SkillKind = "skill" | "qualification";
@@ -38,7 +52,7 @@ export interface SkillDef {
 
 // One person's record for one skill or qualification.
 export interface StaffSkill {
-  level: SkillLevel; // qualifications are always "qualified" (held)
+  level: RecordLevel; // qualifications are always "qualified" (held)
   verifiedOn: string; // YYYY-MM-DD or ""
   verifiedBy: string; // the manager who checked it
   expiresOn: string; // expiry (qualifications) or review date (skills); "" = none
@@ -74,8 +88,13 @@ export function skillName(skills: SkillDef[], id: string): string {
 }
 
 export type SkillState =
-  | { ok: true; level: SkillLevel }
-  | { ok: false; reason: "missing" | "expired" | "too_low"; level: SkillLevel | null; expiresOn?: string };
+  | { ok: true; level: RecordLevel }
+  | {
+      ok: false;
+      reason: "missing" | "expired" | "too_low" | "not_competent";
+      level: RecordLevel | null;
+      expiresOn?: string;
+    };
 
 // Whether `record` meets `minLevel` on `date`. A record past its expiry or
 // review date doesn't count until a manager re-checks it.
@@ -84,6 +103,7 @@ export function skillState(record: StaffSkill | undefined, minLevel: SkillLevel,
   if (record.expiresOn && record.expiresOn < date) {
     return { ok: false, reason: "expired", level: record.level, expiresOn: record.expiresOn };
   }
+  if (record.level === NOT_YET) return { ok: false, reason: "not_competent", level: record.level };
   if (levelRank(record.level) < levelRank(minLevel)) return { ok: false, reason: "too_low", level: record.level };
   return { ok: true, level: record.level };
 }
@@ -117,7 +137,7 @@ export function makeId(name: string, taken: string[]): string {
 function cleanRecord(value: unknown): StaffSkill | null {
   if (typeof value !== "object" || value === null) return null;
   const v = value as Record<string, unknown>;
-  if (!isSkillLevel(v.level)) return null;
+  if (!isRecordLevel(v.level)) return null;
   const date = (d: unknown) => (typeof d === "string" && isValidDate(d) ? d : "");
   return {
     level: v.level,
@@ -164,6 +184,7 @@ export function parseSkillsInput(input: unknown, known: SkillDef[]): StaffSkills
     const v = value as Record<string, unknown>;
     if (v.verifiedOn && !record.verifiedOn) return `${def.name}: the verified date isn't a date`;
     if (v.expiresOn && !record.expiresOn) return `${def.name}: the expiry date isn't a date`;
+    if (def.kind === "qualification" && record.level === NOT_YET) return `${def.name}: a qualification is held or not`;
     skills[id] = def.kind === "qualification" ? { ...record, level: "qualified" } : record;
   }
   return skills;

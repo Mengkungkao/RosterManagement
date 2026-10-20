@@ -1,6 +1,5 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import Link from "next/link";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -14,50 +13,21 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Roster Management",
-  description: "Staff availability, event rosters and wage estimates",
+  title: { default: "RosterManagement", template: "%s · RosterManagement" },
+  description: "Hospitality staff rostering: events, tasks, availability and award wage estimates",
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f5f6f8" },
+    { media: "(prefers-color-scheme: dark)", color: "#0c0e12" },
+  ],
+};
+
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="flex min-h-full flex-col md:h-screen md:overflow-hidden">
-        <header className="shrink-0 border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
-          <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3">
-            <Link
-              href="/"
-              className="font-semibold text-zinc-900 dark:text-zinc-50"
-            >
-              Roster Management
-            </Link>
-            <nav className="flex gap-3 text-sm text-zinc-500 sm:gap-4 dark:text-zinc-400">
-              <Link href="/" className="hover:text-zinc-900 dark:hover:text-zinc-50">
-                Availability
-              </Link>
-              <Link
-                href="/today"
-                className="hover:text-zinc-900 dark:hover:text-zinc-50"
-              >
-                My Shifts
-              </Link>
-              <Link
-                href="/admin"
-                className="hover:text-zinc-900 dark:hover:text-zinc-50"
-              >
-                Admin
-              </Link>
-            </nav>
-          </div>
-        </header>
-        <div className="flex flex-1 flex-col md:min-h-0 md:overflow-y-auto">{children}</div>
-      </body>
+    <html lang="en-AU" className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+      <body className="min-h-dvh text-sm">{children}</body>
     </html>
   );
 }

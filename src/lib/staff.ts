@@ -36,6 +36,7 @@ const HEADER = [
   "Restrictions",
   "Preferences",
   "Requests",
+  "Manager Notes",
 ];
 const FIRST_DAY_COLUMN = LEADING_HEADERS.length;
 const UPDATED_AT_COLUMN = FIRST_DAY_COLUMN + DAYS.length;
@@ -50,6 +51,8 @@ const SKILLS_COLUMN = ACTIVE_COLUMN + 1;
 const RESTRICTIONS_COLUMN = SKILLS_COLUMN + 1;
 const PREFERENCES_COLUMN = RESTRICTIONS_COLUMN + 1;
 const REQUESTS_COLUMN = PREFERENCES_COLUMN + 1;
+const NOTES_COLUMN = REQUESTS_COLUMN + 1;
+export const MAX_NOTES_LENGTH = 2000;
 
 export const MAX_NAME_LENGTH = 100;
 
@@ -72,6 +75,7 @@ export interface StaffMember {
   restrictions: Restriction[]; // admin-only
   preferences: ShiftPreference[];
   requests: StaffRequest[];
+  notes: string; // manager notes and development — admin-only
   unreadable: string[]; // cells that couldn't be read ("Skills", …) — kept as they are in the sheet
 }
 
@@ -144,6 +148,7 @@ function parseRow(r: string[], rowNumber: number): StaffRow {
     restrictions: restrictions ?? [],
     preferences: parsePreferencesCell(r[PREFERENCES_COLUMN] ?? ""),
     requests: requests ?? [],
+    notes: r[NOTES_COLUMN] ?? "",
     unreadable,
     raw,
   };
@@ -194,6 +199,7 @@ async function saveRow(row: StaffRow, existingCount: number): Promise<void> {
     unreadable("Restrictions") ? row.raw.restrictions : formatRestrictionsCell(row.restrictions),
     formatPreferencesCell(row.preferences),
     unreadable("Requests") ? row.raw.requests : formatRequestsCell(row.requests),
+    row.notes,
   ];
   if (row.rowNumber === null) await store.appendRow(tab, values);
   else await store.writeRow(tab, row.rowNumber, values);
@@ -218,6 +224,7 @@ function newRow(staffName: string): StaffRow {
     restrictions: [],
     preferences: [],
     requests: [],
+    notes: "",
     unreadable: [],
     raw: { skills: "", restrictions: "", requests: "" },
   };
@@ -367,6 +374,7 @@ export interface StaffChanges {
   skills?: StaffSkills;
   restrictions?: Restriction[];
   preferences?: ShiftPreference[];
+  notes?: string;
   requestDecision?: { id: string; status: "approved" | "declined" | "resolved" };
 }
 
@@ -414,6 +422,7 @@ export async function updateStaff(
         skills: changes.skills ?? row.skills,
         restrictions: changes.restrictions ?? row.restrictions,
         preferences: changes.preferences ?? row.preferences,
+        notes: changes.notes ?? row.notes,
         requests,
       },
       result: { ok: true },

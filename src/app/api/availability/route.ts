@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { DAYS, DAY_STATUSES, TIME_PATTERN, type WeekAvailability, emptyWeek } from "@/lib/availability";
+import { DAYS, DAY_STATUSES, TIME_PATTERN, type WeekAvailability, availabilityGiven, emptyWeek } from "@/lib/availability";
 import { badRequest, readJson, serverError } from "@/lib/http";
 import { clearFailures, lockedOutMinutes, recordFailure, tooManyAttemptsMessage } from "@/lib/rate-limit";
 import { MAX_NAME_LENGTH, readStaff, saveStaffAvailability } from "@/lib/staff";
@@ -18,6 +18,8 @@ export async function GET(req: NextRequest) {
       // Saved availability is only shown for entries without a password;
       // protected ones go through /api/availability/verify first.
       week: hasPassword ? emptyWeek() : (existing?.week ?? emptyWeek()),
+      // Whether they've ever saved their availability ("not set yet" otherwise).
+      set: hasPassword ? undefined : existing ? availabilityGiven(existing.week, existing.updatedAt) : false,
     });
   } catch (err) {
     return serverError("load your availability", err);

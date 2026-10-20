@@ -1,168 +1,50 @@
 "use client";
 
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import { addDays, formatDayMonth, formatHours, formatWeekdayDate } from "@/lib/dates";
-import {
-  DAILY_MAX_HOURS,
-  EMPLOYMENT_LABELS,
-  FULL_TIME_FORTNIGHT_HOURS,
-  PART_TIME_MIN_WEEKLY_HOURS,
-  STUDENT_MAX_FORTNIGHT_HOURS,
-  softFortnightLimit,
-} from "@/lib/employment";
+import { useRouter } from "next/navigation";
+import { addDays, formatDateRange, formatDayMonth, formatHours, formatWeekdayDate } from "@/lib/dates";
 import type { EventRecord } from "@/lib/events";
-import { type EventView, buildFortnight, staffHref } from "@/lib/overview";
-import { type Gap, type HoursSummary, type Proposal, buildContext, eventWindow, formatWindow, listShifts } from "@/lib/roster";
+import { type EventView, buildFortnight, rosterStatus } from "@/lib/overview";
+import { type Gap, type Proposal, buildContext, listShifts } from "@/lib/roster";
 import type { PaySettings } from "@/lib/settings";
 import type { SkillDef } from "@/lib/skills";
 import type { StaffMember } from "@/lib/staff";
 import type { TaskType } from "@/lib/tasks";
 import type { EventTemplate } from "@/lib/templates";
-import { card, chip, messageClass, mutedText, primaryButton, secondaryButton, tones, warningText } from "../ui";
-import { send } from "./api";
-import EventPanel from "./EventPanel";
+import { send } from "../admin/api";
+import { PageHeader } from "../shell/PageHeader";
+import { Button, ButtonLink, IconButton } from "../ui/Button";
+import { Card } from "../ui/Card";
+import { EmptyState } from "../ui/EmptyState";
+import { SearchInput, Select } from "../ui/Field";
+import { Icon } from "../ui/Icon";
+import { Menu } from "../ui/Menu";
+import { Segmented } from "../ui/Segmented";
+import { cn } from "../ui/cn";
+import { useConfirm, useToast } from "../ui/feedback";
+import EventRow from "./EventRow";
 import GenerateReview from "./GenerateReview";
-import StaffingPill from "./StaffingPill";
+import StaffGrid from "./StaffGrid";
+import TaskDrawer from "./TaskDrawer";
+import TasksDrawer from "./TasksDrawer";
 import TimelineView from "./TimelineView";
+import { type Filters, GROUP_LABELS, GROUP_ORDER, type GroupKey, groupOf, matchesFilters, money } from "./model";
 
-const money = new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD", maximumFractionDigits: 0 });
+type View = "events" | "timeline" | "staff";
+type Range = "all" | "w1" | "w2";
+type Panel = { kind: "task"; eventId: string; taskId: string } | { kind: "tasks"; eventId: string } | null;
 
-interface Props {
-  events: EventRecord[]; // the fortnight's events, plus a day either side for clash checks
-  staff: StaffMember[];
-  settings: PaySettings;
-  skills: SkillDef[];
-  taskTypes: TaskType[];
-  templates: EventTemplate[];
-  fortnightStart: string;
-  today: string;
-  nav: ReactNode;
-  nextEvent: { date: string; name: string; href: string } | null;
-  initialEventId: string | null;
-  initialView: "events" | "timeline";
-  autoGenerate: boolean;
-}
-
-type Message = { type: "success" | "warning" | "error"; text: string } | null;
-
-function EventCard({ view, onSelect }: { view: EventView; onSelect: () => void }) {
-  const { event, statuses, staffing } = view;
-  const ev = eventWindow(event);
-  const warnings = view.issues.filter((i) => i.severity === "warning").length;
-  const team = [...new Set(event.staff.map((s) => s.name))];
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={`${card} block w-full p-3 text-left transition-colors hover:border-zinc-400 focus-visible:ring-2 focus-visible:ring-zinc-400 dark:hover:border-zinc-600`}
-    >
-      <div className="flex items-start gap-2">
-        <div className="min-w-0 flex-1">
-          <div className="font-semibold text-zinc-900 dark:text-zinc-50">{event.name}</div>
-          <div className={`text-xs tabular-nums ${mutedText}`}>
-            {event.startTime}–{event.endTime}
-            {event.location && ` · ${event.location}`}
-          </div>
-          <div className={`text-xs tabular-nums ${mutedText}`}>
-            {view.span.start < ev.start && `Setup from ${formatWindow(view.span).slice(0, 5)}`}
-            {view.span.start < ev.start && view.span.end > ev.end && " · "}
-            {view.span.end > ev.end && `Pack-down to ${formatWindow(view.span).slice(-5)}`}
-          </div>
-        </div>
-        <div className="flex shrink-0 flex-col items-end gap-1">
-          <StaffingPill filled={staffing.filled} needed={staffing.needed} label="" />
-          {event.status === "draft" && <span className={`${chip} ${tones.neutral}`}>Draft</span>}
-          {warnings > 0 && (
-            <span className={`${chip} ${tones.warn}`}>
-              ⚠ {warnings} <span className="sr-only">warnings</span>
-            </span>
-          )}
-        </div>
-      </div>
-      {(event.tasks.length > 0 || statuses.length > 1) && (
-        <ul className="mt-2 flex flex-wrap gap-1">
-          {statuses.map((s) => {
-            const ok = s.covered >= s.task.count && s.unsafe.length === 0;
-            return (
-              <li key={s.task.id} className={`${chip} ${ok ? tones.good : s.covered > 0 ? tones.warn : tones.bad}`}>
-                <span aria-hidden="true">{ok ? "✓" : "!"}</span> {s.task.name} {s.covered}/{s.task.count}
-              </li>
-            );
-          })}
-        </ul>
-      )}
-      {team.length > 0 && (
-        <p className="mt-2 line-clamp-2 text-xs text-zinc-700 dark:text-zinc-300">
-          <span className={mutedText}>Team:</span> {team.join(", ")}
-        </p>
-      )}
-      <p className={`mt-1 text-xs tabular-nums ${mutedText}`}>
-        {view.hours > 0
-          ? `${formatHours(view.hours)} rostered · ≈ ${money.format(view.cost)}`
-          : `Planned ≈ ${formatHours(view.plannedHours)} · ${money.format(view.plannedCost)} at Level 1 casual`}
-      </p>
-    </button>
-  );
-}
-
-function fortnightTotal(row: HoursSummary): string {
-  const limit = row.employmentType === "student" ? STUDENT_MAX_FORTNIGHT_HOURS : softFortnightLimit(row.employmentType);
-  return limit === null ? formatHours(row.total) : `${formatHours(row.total)} / ${limit}h`;
-}
-
-function HoursTable({ rows }: { rows: HoursSummary[] }) {
-  const weekClass = (row: HoursSummary, hours: number) =>
-    row.employmentType === "part_time" && hours < PART_TIME_MIN_WEEKLY_HOURS ? warningText : "";
-  return (
-    <div className={`mt-3 overflow-x-auto ${card}`}>
-      <table className="w-full min-w-[560px] text-sm">
-        <thead>
-          <tr className={`border-b border-zinc-200 text-left dark:border-zinc-800 ${mutedText}`}>
-            <th className="px-4 py-2.5 font-medium">Staff</th>
-            <th className="px-3 py-2.5 font-medium">Type</th>
-            <th className="px-3 py-2.5 text-right font-medium">Week 1</th>
-            <th className="px-3 py-2.5 text-right font-medium">Week 2</th>
-            <th className="px-3 py-2.5 text-right font-medium">Fortnight</th>
-            <th className="px-4 py-2.5 font-medium">Check</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.staffName} className="border-b border-zinc-100 last:border-0 dark:border-zinc-900">
-              <td className="px-4 py-2 font-medium text-zinc-800 dark:text-zinc-200">
-                <Link href={staffHref(row.staffName)} className="hover:underline">
-                  {row.staffName}
-                </Link>
-              </td>
-              <td className={`px-3 py-2 ${mutedText}`}>{EMPLOYMENT_LABELS[row.employmentType]}</td>
-              <td className={`px-3 py-2 text-right tabular-nums ${weekClass(row, row.week1)}`}>{formatHours(row.week1)}</td>
-              <td className={`px-3 py-2 text-right tabular-nums ${weekClass(row, row.week2)}`}>{formatHours(row.week2)}</td>
-              <td className="px-3 py-2 text-right font-medium tabular-nums">{fortnightTotal(row)}</td>
-              <td className="px-4 py-2">
-                {row.warnings.length > 0 ? (
-                  <span className={warningText}>⚠ {row.warnings.join(" · ")}</span>
-                ) : (
-                  <span className={mutedText}>✓ OK</span>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function setUrlParam(name: string, value: string | null) {
+function setUrl(changes: Record<string, string | null>) {
   const url = new URL(window.location.href);
-  if (value) url.searchParams.set(name, value);
-  else url.searchParams.delete(name);
+  for (const [k, v] of Object.entries(changes)) {
+    if (v) url.searchParams.set(k, v);
+    else url.searchParams.delete(k);
+  }
   window.history.replaceState(null, "", url);
 }
 
-export default function RosterBoard({
+export default function RosterWorkspace({
   events,
   staff,
   settings,
@@ -170,76 +52,139 @@ export default function RosterBoard({
   taskTypes,
   templates,
   fortnightStart,
+  currentFortnight,
   today,
-  nav,
   nextEvent,
   initialEventId,
+  initialTaskId,
   initialView,
   autoGenerate,
-}: Props) {
+}: {
+  events: EventRecord[]; // the fortnight's events, plus a day either side for clash checks
+  staff: StaffMember[];
+  settings: PaySettings;
+  skills: SkillDef[];
+  taskTypes: TaskType[];
+  templates: EventTemplate[];
+  fortnightStart: string;
+  currentFortnight: string;
+  today: string;
+  nextEvent: { date: string; name: string; href: string } | null;
+  initialEventId: string | null;
+  initialTaskId: string | null;
+  initialView: View;
+  autoGenerate: boolean;
+}) {
   const router = useRouter();
+  const toast = useToast();
+  const confirm = useConfirm();
   const [refreshing, startRefresh] = useTransition();
   const [running, setRunning] = useState<string | null>(null);
-  const [message, setMessage] = useState<Message>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(initialEventId);
-  const [view, setView] = useState<"events" | "timeline">(initialView);
+  const [view, setView] = useState<View>(initialView);
+  const [range, setRange] = useState<Range>("all");
+  const [search, setSearch] = useState("");
+  const [eventId, setEventId] = useState("");
+  const [staffName, setStaffName] = useState("");
+  const [group, setGroup] = useState<GroupKey | "">("");
+  const [showFilters, setShowFilters] = useState(false);
+  const [panel, setPanel] = useState<Panel>(
+    initialEventId && initialTaskId ? { kind: "task", eventId: initialEventId, taskId: initialTaskId } : null
+  );
   const [draft, setDraft] = useState<{ proposals: Proposal[]; gaps: Gap[] } | null>(null);
 
   const shifts = useMemo(() => listShifts(events), [events]);
-  const fortnight = useMemo(
-    () => buildFortnight(events, staff, settings, skills, fortnightStart),
-    [events, staff, settings, skills, fortnightStart]
-  );
+  const fortnight = useMemo(() => buildFortnight(events, staff, settings, skills, fortnightStart), [events, staff, settings, skills, fortnightStart]);
   const ctx = useMemo(
     () => buildContext(staff, shifts, settings.fortnightStart, { skills, matching: settings.matching }),
     [staff, shifts, settings, skills]
   );
+  const [expanded, setExpanded] = useState<Set<string>>(() => {
+    if (initialEventId) return new Set([initialEventId]);
+    // Open what still needs work from today on.
+    return new Set(fortnight.events.filter((v) => v.event.date >= today && rosterStatus(v).key !== "published").map((v) => v.event.id));
+  });
 
-  const views = fortnight.events;
-  const ahead = views.filter((v) => v.event.date >= today);
+  const allDays = useMemo(() => Array.from({ length: 14 }, (_, i) => addDays(fortnightStart, i)), [fortnightStart]);
+  const days = range === "w1" ? allDays.slice(0, 7) : range === "w2" ? allDays.slice(7) : allDays;
+  const filters: Filters = { search, eventId, staffName, group, days };
+  const filtered = fortnight.events.filter((v) => matchesFilters(v, filters, taskTypes));
+  const ahead = fortnight.events.filter((v) => v.event.date >= today);
   const filled = ahead.reduce((sum, v) => sum + v.staffing.filled, 0);
   const needed = ahead.reduce((sum, v) => sum + v.staffing.needed, 0);
-  const drafts = views.filter((v) => v.event.status === "draft").length;
-  const peopleWithWarnings = fortnight.hours.filter((h) => h.warnings.length > 0).length;
-  const selected = views.find((v) => v.event.id === selectedId) ?? null;
+  const attention = ahead.filter((v) => rosterStatus(v).key === "attention").length;
+  const publishable = fortnight.events.filter((v) => v.event.status === "draft" && v.event.date >= today);
+  const filtering = Boolean(search || eventId || staffName || group || range !== "all");
   const busy = running !== null || refreshing;
+  const groupsPresent = GROUP_ORDER.filter((g) => fortnight.events.some((v) => v.statuses.some((s) => groupOf(s, taskTypes) === g)));
+  const peopleOnRoster = staff.filter((s) => s.active || shifts.some((sh) => sh.staffName.toLowerCase() === s.staffName.toLowerCase()));
 
   const refresh = useCallback(() => startRefresh(() => router.refresh()), [router]);
 
-  const select = useCallback((id: string | null) => {
-    setSelectedId(id);
-    setUrlParam("event", id);
+  const openTask = useCallback((eventId: string, taskId: string) => {
+    setPanel({ kind: "task", eventId, taskId });
+    setExpanded((all) => new Set(all).add(eventId));
+    setUrl({ event: eventId, task: taskId });
+  }, []);
+  const closePanel = useCallback(() => {
+    setPanel(null);
+    setUrl({ task: null });
   }, []);
 
-  async function generate() {
+  // Scroll a linked event into view once.
+  const scrolled = useRef(false);
+  useEffect(() => {
+    if (scrolled.current || !initialEventId) return;
+    scrolled.current = true;
+    document.getElementById(`row-${initialEventId}`)?.scrollIntoView({ block: "start" });
+  }, [initialEventId]);
+
+  const generate = useCallback(async () => {
     setRunning("generate");
-    setMessage(null);
     const result = await send<{ proposals: Proposal[]; gaps: Gap[] }>("/api/admin/roster/generate", "POST", { fortnightStart });
     setRunning(null);
-    if (!result.ok) setMessage({ type: "error", text: result.error });
+    if (!result.ok) toast.error(result.error);
     else setDraft(result.data);
-  }
+  }, [fortnightStart, toast]);
 
   const generatedOnce = useRef(false);
   useEffect(() => {
     if (!autoGenerate || generatedOnce.current) return;
     generatedOnce.current = true;
-    setUrlParam("generate", null);
+    setUrl({ generate: null });
     generate();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoGenerate]);
+  }, [autoGenerate, generate]);
 
   async function run(action: "clear" | "export" | "publish") {
-    if (
-      action === "clear" &&
-      !window.confirm(
-        "Take everyone who isn't locked off this fortnight's events from today on? Locked people, the events themselves and past events stay as they are."
-      )
-    ) {
-      return;
+    if (action === "clear") {
+      const ok = await confirm({
+        title: "Clear unlocked assignments?",
+        description: (
+          <>
+            Everyone who isn&apos;t locked comes off this fortnight&apos;s events from today on (
+            {formatDateRange([fortnightStart, today].sort()[1], addDays(fortnightStart, 13))}). Locked people, the events
+            themselves and past events stay as they are. This can&apos;t be undone.
+          </>
+        ),
+        confirmLabel: "Clear unlocked",
+        tone: "danger",
+      });
+      if (!ok) return;
+    }
+    if (action === "publish") {
+      const ok = await confirm({
+        title: `Publish ${publishable.length} draft event${publishable.length === 1 ? "" : "s"}?`,
+        description: (
+          <>
+            Staff will see their shifts on: {publishable.map((v) => v.event.name).join(", ")}.
+            {publishable.some((v) => !v.staffing.complete) && " Some still have open positions — you can keep filling them after publishing."}
+          </>
+        ),
+        confirmLabel: "Publish",
+        tone: "primary",
+      });
+      if (!ok) return;
     }
     setRunning(action);
-    setMessage(null);
     const result = await send<{ cleared?: number; kept?: number; published?: number; drafts?: number }>(
       `/api/admin/roster/${action}`,
       "POST",
@@ -247,165 +192,296 @@ export default function RosterBoard({
     );
     setRunning(null);
     if (!result.ok) {
-      setMessage({ type: "error", text: result.error });
+      toast.error(result.error);
       return;
     }
     const d = result.data;
-    if (action === "clear") {
-      setMessage({ type: "success", text: `Took ${d.cleared} off this fortnight's events${d.kept ? `; kept ${d.kept} locked` : ""}.` });
-    } else if (action === "publish") {
-      setMessage({ type: "success", text: `Published ${d.published} event${d.published === 1 ? "" : "s"}. Staff can now see these shifts.` });
-    } else {
-      setMessage({
-        type: d.drafts ? "warning" : "success",
-        text: `Saved this fortnight to the Roster tab in Google Sheets.${d.drafts ? ` ${d.drafts} draft event${d.drafts === 1 ? " was" : "s were"} left out — publish ${d.drafts === 1 ? "it" : "them"} first.` : ""}`,
-      });
-    }
+    if (action === "clear") toast.success(`Took ${d.cleared} assignment${d.cleared === 1 ? "" : "s"} off${d.kept ? `; kept ${d.kept} locked` : ""}.`);
+    else if (action === "publish") toast.success(`Published ${d.published} event${d.published === 1 ? "" : "s"}. Staff can now see these shifts.`);
+    else
+      toast.success(
+        `Saved this fortnight to the Roster tab in Google Sheets.${d.drafts ? ` ${d.drafts} draft event${d.drafts === 1 ? " was" : "s were"} left out until published.` : ""}`
+      );
     if (action !== "export") refresh();
   }
 
-  const weeks = [0, 7].map((offset) => Array.from({ length: 7 }, (_, i) => addDays(fortnightStart, offset + i)));
+  const panelView: EventView | undefined = panel ? fortnight.events.find((v) => v.event.id === panel.eventId) : undefined;
+  const panelTask = panel?.kind === "task" && panelView ? panelView.statuses.find((s) => s.task.id === panel.taskId) : undefined;
+  const dayGroups = days.map((d) => ({ date: d, items: filtered.filter((v) => v.event.date === d) })).filter((g) => g.items.length);
 
   return (
     <>
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-        {nav}
-        <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={generate} disabled={busy} className={primaryButton}>
-            {running === "generate" ? "Working it out…" : "Generate roster"}
-          </button>
-          {drafts > 0 && (
-            <button type="button" onClick={() => run("publish")} disabled={busy} className={secondaryButton}>
-              {running === "publish" ? "Publishing…" : `Publish ${drafts} draft${drafts === 1 ? "" : "s"}`}
-            </button>
-          )}
-          <button type="button" onClick={() => run("clear")} disabled={busy} className={secondaryButton}>
-            {running === "clear" ? "Clearing…" : "Clear unlocked"}
-          </button>
-          <button type="button" onClick={() => run("export")} disabled={busy} className={secondaryButton}>
-            {running === "export" ? "Saving…" : "Save to Roster tab"}
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        description="Fill each event's tasks with people who pass every check. Open a task to see who fits and why, or generate a draft for the whole fortnight."
+        actions={
+          <>
+            {publishable.length > 0 && (
+              <Button icon="send" onClick={() => run("publish")} loading={running === "publish"} disabled={busy}>
+                Publish {publishable.length} draft{publishable.length === 1 ? "" : "s"}
+              </Button>
+            )}
+            <Button variant="primary" icon="sparkle" onClick={generate} loading={running === "generate"} disabled={busy}>
+              Generate roster
+            </Button>
+            <Menu
+              label="More roster actions"
+              items={[
+                { label: "Clear unlocked assignments", icon: "trash", onSelect: () => run("clear"), tone: "danger", disabled: busy },
+                { label: "Save to Roster tab (Google Sheet)", icon: "fileText", onSelect: () => run("export"), disabled: busy },
+                { label: "Hours and wages report", icon: "chart", href: `/admin/reports?fortnight=${fortnightStart}` },
+              ]}
+              trigger={(p) => <IconButton icon="more" label="More roster actions" variant="secondary" onClick={p.toggle} aria-expanded={p["aria-expanded"]} aria-haspopup="menu" />}
+            />
+          </>
+        }
+      />
 
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-        <p className={`text-sm ${mutedText}`}>
-          {views.length === 0 ? (
-            <>
-              No events this fortnight.{" "}
-              {nextEvent && (
-                <Link href={nextEvent.href} className="underline">
-                  Next event: {nextEvent.name}, {formatWeekdayDate(nextEvent.date)}
-                </Link>
-              )}
-            </>
-          ) : (
-            <>
-              {views.length} {views.length === 1 ? "event" : "events"} · {filled} of {needed} positions filled from today
-              {drafts > 0 && ` · ${drafts} draft${drafts === 1 ? "" : "s"}`}
-              {peopleWithWarnings > 0 && (
-                <span className={warningText}>
-                  {" "}
-                  · ⚠ {peopleWithWarnings} {peopleWithWarnings === 1 ? "person needs" : "people need"} a check
-                </span>
-              )}
-              {" · "}
-              <Link href={`/admin/wages?fortnight=${fortnightStart}`} className="underline">
-                Wages ≈ {money.format(fortnight.wages.totalPay)}
-              </Link>
-              {refreshing && " · updating…"}
-            </>
-          )}
-        </p>
-        <div className="flex rounded-lg border border-zinc-300 p-0.5 dark:border-zinc-700" role="group" aria-label="View">
-          {(["events", "timeline"] as const).map((v) => (
-            <button
-              key={v}
-              type="button"
-              aria-pressed={view === v}
+      <Card className="mb-4" as="div">
+        <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2.5">
+          <div className="flex items-center gap-1">
+            <ButtonLink href={`/admin/roster?fortnight=${addDays(fortnightStart, -14)}`} variant="ghost" size="sm" className="w-8 px-0" aria-label="Previous fortnight">
+              <Icon name="chevronLeft" size={16} />
+            </ButtonLink>
+            <span className="min-w-40 text-center text-sm font-semibold text-fg tabular-nums">{formatDateRange(fortnightStart, addDays(fortnightStart, 13))}</span>
+            <ButtonLink href={`/admin/roster?fortnight=${addDays(fortnightStart, 14)}`} variant="ghost" size="sm" className="w-8 px-0" aria-label="Next fortnight">
+              <Icon name="chevronRight" size={16} />
+            </ButtonLink>
+            {fortnightStart === currentFortnight ? (
+              <Button
+                size="sm"
+                onClick={() => {
+                  setRange(today < addDays(fortnightStart, 7) ? "w1" : "w2");
+                  document.getElementById(`day-${today}`)?.scrollIntoView({ block: "start", behavior: "smooth" });
+                }}
+              >
+                Today
+              </Button>
+            ) : (
+              <ButtonLink size="sm" href={`/admin/roster?fortnight=${currentFortnight}`}>
+                Today
+              </ButtonLink>
+            )}
+          </div>
+          <Segmented<Range>
+            label="Period"
+            size="sm"
+            value={range}
+            onChange={setRange}
+            options={[
+              { value: "all", label: "Fortnight" },
+              { value: "w1", label: `Week 1 · ${formatDayMonth(fortnightStart)}` },
+              { value: "w2", label: `Week 2 · ${formatDayMonth(addDays(fortnightStart, 7))}` },
+            ]}
+          />
+          <Button
+            size="sm"
+            icon="filter"
+            className="sm:hidden"
+            aria-expanded={showFilters}
+            onClick={() => setShowFilters(!showFilters)}
+          >
+            Filters{filtering ? " · on" : ""}
+          </Button>
+          <Segmented<View>
+            label="View"
+            size="sm"
+            className="ml-auto"
+            value={view}
+            onChange={(v) => {
+              setView(v);
+              setUrl({ view: v === "events" ? null : v });
+            }}
+            options={[
+              { value: "events", label: "Events", icon: "list" },
+              { value: "timeline", label: "Timeline", icon: "timeline" },
+              { value: "staff", label: "Staff", icon: "grid" },
+            ]}
+          />
+        </div>
+        <div className={cn("flex-wrap items-center gap-2 px-3 py-2.5 sm:flex", showFilters ? "flex" : "hidden")}>
+          <SearchInput value={search} onChange={setSearch} placeholder="Search events, tasks, staff" label="Search the roster" className="w-full sm:w-64" />
+          <Select value={eventId} onChange={(e) => setEventId(e.target.value)} aria-label="Event" className="w-full sm:w-48">
+            <option value="">All events</option>
+            {fortnight.events.map((v) => (
+              <option key={v.event.id} value={v.event.id}>
+                {v.event.name} · {formatDayMonth(v.event.date)}
+              </option>
+            ))}
+          </Select>
+          <Select value={staffName} onChange={(e) => setStaffName(e.target.value)} aria-label="Staff member" className="w-full sm:w-44">
+            <option value="">All staff</option>
+            {peopleOnRoster.map((s) => (
+              <option key={s.staffName} value={s.staffName}>
+                {s.staffName}
+              </option>
+            ))}
+          </Select>
+          <Select value={group} onChange={(e) => setGroup(e.target.value as GroupKey | "")} aria-label="Department" className="w-full sm:w-48">
+            <option value="">All departments</option>
+            {groupsPresent.map((g) => (
+              <option key={g} value={g}>
+                {GROUP_LABELS[g]}
+              </option>
+            ))}
+          </Select>
+          {filtering && (
+            <Button
+              size="sm"
+              variant="ghost"
+              icon="x"
               onClick={() => {
-                setView(v);
-                setUrlParam("view", v === "events" ? null : v);
+                setSearch("");
+                setEventId("");
+                setStaffName("");
+                setGroup("");
+                setRange("all");
               }}
-              className={`rounded-md px-3 py-1 text-sm ${
-                view === v ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : "text-zinc-600 dark:text-zinc-400"
-              }`}
             >
-              {v === "events" ? "Events" : "Timeline"}
-            </button>
-          ))}
+              Clear filters
+            </Button>
+          )}
         </div>
-      </div>
-      {message && <p className={`mt-2 text-sm ${messageClass(message.type)}`} role="status">{message.text}</p>}
+        <dl className="grid grid-cols-2 border-t border-line text-sm sm:grid-cols-5">
+          {[
+            ["Events", String(fortnight.events.length), `${ahead.length} from today`],
+            ["Positions filled", `${filled}/${needed}`, "today to end of fortnight"],
+            ["Need attention", String(attention), attention ? "events with problems" : "nothing to fix"],
+            ["Rostered hours", formatHours(fortnight.wages.totalHours), "after unpaid breaks"],
+            ["Est. labour cost", money.format(fortnight.wages.totalPay), "award minimums"],
+          ].map(([label, value, detail], i) => (
+            <div
+              key={label}
+              className={cn("px-4 py-2.5", i > 0 && "border-l border-line", i === 2 && "max-sm:border-l-0", i >= 2 && "max-sm:border-t", i === 4 && "max-sm:col-span-2 max-sm:border-l-0")}
+            >
+              <dt className="text-xs text-muted">{label}</dt>
+              <dd className={cn("font-semibold tabular-nums", label === "Need attention" && attention ? "text-warning" : "text-fg")}>
+                {label === "Est. labour cost" ? (
+                  <Link href={`/admin/reports?fortnight=${fortnightStart}&tab=wages`} className="hover:underline">
+                    {value}
+                  </Link>
+                ) : (
+                  value
+                )}
+                <span className="ml-1.5 text-xs font-normal text-muted">{detail}</span>
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </Card>
 
-      {view === "timeline" ? (
-        <TimelineView views={views} shifts={shifts} fortnightStart={fortnightStart} today={today} onSelect={select} />
+      {refreshing && <p className="mb-2 text-xs text-muted" role="status">Updating…</p>}
+
+      {fortnight.events.length === 0 ? (
+        <Card>
+          <EmptyState
+            icon="calendar"
+            title="No events this fortnight"
+            action={
+              <>
+                <ButtonLink variant="primary" icon="plus" href="/admin/events/new">
+                  Create event
+                </ButtonLink>
+                {nextEvent && (
+                  <ButtonLink href={nextEvent.href} iconRight="arrowRight">
+                    Next: {nextEvent.name}, {formatWeekdayDate(nextEvent.date)}
+                  </ButtonLink>
+                )}
+              </>
+            }
+          >
+            Create an event, or move to the fortnight with your next one.
+          </EmptyState>
+        </Card>
+      ) : view === "timeline" ? (
+        <TimelineView views={filtered} shifts={shifts} days={days} today={today} onOpenTask={openTask} staffName={staffName} />
+      ) : view === "staff" ? (
+        <StaffGrid
+          staff={staff}
+          shifts={shifts}
+          hours={fortnight.hours}
+          days={days}
+          today={today}
+          staffName={staffName}
+          search={search}
+          eventIds={new Set(filtered.map((v) => v.event.id))}
+          onOpenTask={openTask}
+        />
+      ) : dayGroups.length === 0 ? (
+        <Card>
+          <EmptyState icon="filter" title="Nothing matches these filters" compact>
+            Try another period or clear the filters.
+          </EmptyState>
+        </Card>
       ) : (
-        weeks.map((days, w) => {
-          const withEvents = days.filter((d) => views.some((v) => v.event.date === d));
-          return (
-            <section key={w} className="mt-5">
-              <h2 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
-                Week {w + 1}{" "}
-                <span className={`font-normal ${mutedText}`}>
-                  · {formatDayMonth(days[0])} – {formatDayMonth(days[6])}
-                  {withEvents.length === 0 && " · no events"}
-                </span>
-              </h2>
-              <div className="mt-2 space-y-4">
-                {withEvents.map((date) => (
-                  <div key={date} className="grid gap-2 md:grid-cols-[7.5rem_minmax(0,1fr)]">
-                    <div
-                      className={`text-sm font-medium md:pt-3 ${date === today ? "text-zinc-900 dark:text-zinc-50" : mutedText}`}
-                    >
-                      {formatWeekdayDate(date)}
-                      {date === today && <span className={`ml-1 ${chip} ${tones.info}`}>today</span>}
-                      {date < today && <span className="block text-xs font-normal">past</span>}
-                    </div>
-                    <div className={`grid gap-2 sm:grid-cols-2 xl:grid-cols-3 ${date < today ? "opacity-70" : ""}`}>
-                      {views
-                        .filter((v) => v.event.date === date)
-                        .map((v) => (
-                          <EventCard key={v.event.id} view={v} onSelect={() => select(v.event.id)} />
-                        ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          );
-        })
+        <>
+          <div className="mb-2 flex justify-end gap-2">
+            <Button size="sm" variant="ghost" onClick={() => setExpanded(new Set(filtered.map((v) => v.event.id)))}>
+              Expand all
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setExpanded(new Set())}>
+              Collapse all
+            </Button>
+          </div>
+          <div className="space-y-6">
+            {dayGroups.map((g) => (
+              <section key={g.date} id={`day-${g.date}`} className="scroll-mt-20" aria-labelledby={`day-title-${g.date}`}>
+                <h2 id={`day-title-${g.date}`} className="mb-2 flex items-center gap-2 text-sm font-semibold text-fg">
+                  {formatWeekdayDate(g.date)}
+                  {g.date === today && <span className="rounded bg-primary-soft px-1.5 text-xs font-medium text-primary-text">Today</span>}
+                  {g.date < today && <span className="text-xs font-normal text-muted">Past</span>}
+                </h2>
+                <div className="space-y-3">
+                  {g.items.map((v) => (
+                    <EventRow
+                      key={v.event.id}
+                      view={v}
+                      expanded={expanded.has(v.event.id)}
+                      onToggle={() =>
+                        setExpanded((all) => {
+                          const next = new Set(all);
+                          if (next.has(v.event.id)) next.delete(v.event.id);
+                          else next.add(v.event.id);
+                          return next;
+                        })
+                      }
+                      onOpenTask={(taskId) => openTask(v.event.id, taskId)}
+                      onEditTasks={() => setPanel({ kind: "tasks", eventId: v.event.id })}
+                      filters={filters}
+                      taskTypes={taskTypes}
+                      today={today}
+                      busy={busy}
+                      onSaved={refresh}
+                    />
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+        </>
       )}
 
-      <section className="mt-8">
-        <h2 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
-          Hours this fortnight{" "}
-          <span className={`font-normal ${mutedText}`}>
-            · after unpaid breaks · students up to {STUDENT_MAX_FORTNIGHT_HOURS}h, full-time and casual up to{" "}
-            {FULL_TIME_FORTNIGHT_HOURS}h, part-time at least {PART_TIME_MIN_WEEKLY_HOURS}h a week, everyone at most{" "}
-            {DAILY_MAX_HOURS}h a day
-          </span>
-        </h2>
-        {fortnight.hours.length === 0 ? (
-          <p className={`mt-2 text-sm ${mutedText}`}>
-            No staff yet — add them on the <Link href="/admin/staff" className="underline">Staff</Link> tab.
-          </p>
-        ) : (
-          <HoursTable rows={fortnight.hours} />
-        )}
-      </section>
-
-      {selected && (
-        <EventPanel
-          key={selected.event.id}
-          view={selected}
+      {panel?.kind === "task" && panelView && panelTask && (
+        <TaskDrawer
+          key={`${panel.eventId}-${panel.taskId}`}
+          view={panelView}
+          status={panelTask}
           ctx={ctx}
           skills={skills}
+          busy={refreshing}
+          onSaved={refresh}
+          onClose={closePanel}
+        />
+      )}
+      {panel?.kind === "tasks" && panelView && (
+        <TasksDrawer
+          key={`tasks-${panel.eventId}`}
+          view={panelView}
           taskTypes={taskTypes}
+          skills={skills}
           templates={templates}
           busy={refreshing}
           onSaved={refresh}
-          onClose={() => select(null)}
+          onClose={() => setPanel(null)}
         />
       )}
       {draft && (
@@ -413,13 +489,21 @@ export default function RosterBoard({
           proposals={draft.proposals}
           gaps={draft.gaps}
           onClose={() => setDraft(null)}
-          onOpenEvent={(id) => {
+          onOpenTask={(e, t) => {
             setDraft(null);
-            select(id);
+            openTask(e, t);
           }}
-          onApplied={(m) => {
+          onApplied={({ applied, skipped }) => {
             setDraft(null);
-            setMessage(m);
+            if (skipped.length) {
+              toast.error(
+                `Added ${applied}. Skipped ${skipped.length} because the roster changed since the draft: ${skipped
+                  .map((s) => `${s.staffName} (${s.eventName}: ${s.reason})`)
+                  .join("; ")}.`
+              );
+            } else {
+              toast.success(`Added ${applied} assignment${applied === 1 ? "" : "s"}. Review any open positions, then publish.`);
+            }
             refresh();
           }}
         />

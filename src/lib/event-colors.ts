@@ -1,10 +1,12 @@
+// Muted hues to tell events apart. Green, amber and red are left out: those
+// mean filled, warning and problem everywhere else in the app.
 const EVENT_COLORS = [
-  "bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200",
-  "bg-fuchsia-100 text-fuchsia-800 dark:bg-fuchsia-900 dark:text-fuchsia-200",
-  "bg-sky-100 text-sky-800 dark:bg-sky-900 dark:text-sky-200",
-  "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
-  "bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-200",
-  "bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-200",
+  "bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-200 dark:bg-indigo-950 dark:text-indigo-200 dark:ring-indigo-800",
+  "bg-sky-50 text-sky-800 ring-1 ring-inset ring-sky-200 dark:bg-sky-950 dark:text-sky-200 dark:ring-sky-800",
+  "bg-violet-50 text-violet-800 ring-1 ring-inset ring-violet-200 dark:bg-violet-950 dark:text-violet-200 dark:ring-violet-800",
+  "bg-cyan-50 text-cyan-800 ring-1 ring-inset ring-cyan-200 dark:bg-cyan-950 dark:text-cyan-200 dark:ring-cyan-800",
+  "bg-slate-100 text-slate-800 ring-1 ring-inset ring-slate-300 dark:bg-slate-900 dark:text-slate-200 dark:ring-slate-700",
+  "bg-blue-50 text-blue-800 ring-1 ring-inset ring-blue-200 dark:bg-blue-950 dark:text-blue-200 dark:ring-blue-800",
 ];
 
 // Deterministic per-event color, stable across renders and (since it's keyed

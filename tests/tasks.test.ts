@@ -341,6 +341,7 @@ describe("manual changes", () => {
     expect(eventIssues(withReason, [status])).toEqual([
       {
         severity: "info",
+        code: "unavailable",
         text: "Ann isn't available for all of 17:00–22:00 — rostered anyway: “Swapped with Ben”",
         taskId: "food",
         staffName: "Ann",
@@ -424,5 +425,20 @@ describe("explaining an open position", () => {
       { code: "qualification", label: "missing or expired qualification", count: 1 },
       { code: "team", label: "eligible, but fewer than a team of 2", count: 1 },
     ]);
+  });
+});
+
+describe("skill records", () => {
+  it("keeps 'assessed as not yet competent' apart from 'not verified', and neither counts", () => {
+    const e = event({ tasks: [barista] });
+    const assessed = { ...person("Ann"), skills: { barista: skill("not_yet") } };
+    const ctx = buildContext([assessed, person("Ben")], [], ANCHOR, options);
+    const [ann, ben] = rankForTask(e, barista, taskWindow(e, barista), ctx);
+    expect(ann.blockers).toEqual(["Barista: assessed as not yet competent (needs Trained)"]);
+    expect(ben.blockers).toEqual(["Barista not verified (needs Trained)"]);
+    // On a task without a minimum it isn't a reason to recommend them either.
+    const food = task({ id: "f", name: "Food", skillId: "barista" });
+    const [c] = rankForTask(event({ tasks: [food] }), food, { start: 1020, end: 1320 }, buildContext([assessed], [], ANCHOR, options));
+    expect(c.reasons.some((r) => r.includes("Barista"))).toBe(false);
   });
 });

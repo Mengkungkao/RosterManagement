@@ -2,7 +2,7 @@ import { DAYS, type DayAvailability, type WeekAvailability } from "@/lib/availab
 import type { EmploymentType } from "@/lib/employment";
 import type { EventRecord } from "@/lib/events";
 import type { RosterStaff } from "@/lib/roster";
-import type { SkillLevel, StaffSkill } from "@/lib/skills";
+import type { RecordLevel, StaffSkill } from "@/lib/skills";
 import type { EventTask } from "@/lib/tasks";
 
 export const ALL_DAY: DayAvailability = { status: "available_all_day", startTime: "", endTime: "" };
@@ -73,7 +73,7 @@ export function task(fields: Partial<EventTask> & { id: string; name: string }):
   };
 }
 
-export const skill = (level: SkillLevel, expiresOn = ""): StaffSkill => ({
+export const skill = (level: RecordLevel, expiresOn = ""): StaffSkill => ({
   level,
   verifiedOn: "2026-09-01",
   verifiedBy: "Manager",

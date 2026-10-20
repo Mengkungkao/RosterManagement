@@ -7,64 +7,90 @@ availability and see their shifts on their phones. Everything is stored in a Goo
 Sheet — the sheet *is* the database.
 
 The audit and migration notes for the October 2026 redesign are in
-[docs/redesign-2026-10.md](docs/redesign-2026-10.md).
+[docs/redesign-2026-10.md](docs/redesign-2026-10.md), and the interface redesign that
+followed is recorded in [docs/ui-redesign-2026-10.md](docs/ui-redesign-2026-10.md).
 
 ## The everyday workflow
 
-1. **Events → Create event.** Four short steps: details (name, date, room, times,
-   guests, notes) → staffing (start from a template or blank, then tasks, headcounts
-   and times) → run of show (optional) → review (positions, requirements, estimated
-   hours and cost). Save it as a draft.
+1. **Events → Create event.** One page in three parts: event details (name, date,
+   venue, times, guests, notes) → staffing requirements (start from a template or blank,
+   then tasks, headcounts and times) → schedule and review (run of show, staffing
+   summary). A summary alongside shows positions, estimated hours and cost. Save it as
+   a draft; you land on the roster with the event open.
 2. **Roster → Generate roster.** The app proposes people for every open position from
    today to the end of the pay fortnight, with a reason for each, and lists what it
    couldn't fill and why. Untick anything you don't want, then add the rest. Nothing
    is saved until you do.
-3. **Fix the gaps by hand.** Open the event, open a task, add or replace people. The
-   list shows who fits best and why, and who can't and why.
+3. **Fill the gaps.** Click a task on the roster: a side panel shows what it needs,
+   who's on it, suggested staff with why they fit, and who can't and why — assign or
+   replace without leaving the page.
 4. **Publish.** Drafts aren't shown to staff. Publish the event (or "Publish drafts"
    for the fortnight) and staff see their shifts, tasks and instructions.
 
 ## What's where
 
-**Staff** (no admin login — each person picks a password the first time):
+**Staff** (no manager login — each person picks a password the first time), built for
+phones:
 
-- **Availability** (`/`) — for each weekday: Unavailable, All day, or Custom hours
-  (overnight works, e.g. 22:00 to 06:00); and **dates they can't work** (leave,
-  exams). Asking for days off keeps them off the roster for those days until the
-  manager declines it.
-- **My Shifts** (`/today`) — their own published shifts for the next two weeks: times,
+- **Availability** (`/`) — their usual week, one row per day with a 24-hour bar:
+  Off, All day, or set hours (overnight works, e.g. 22:00 to 06:00), with "Copy Monday
+  to weekdays"; and **dates they can't work** (leave, exams). Asking for days off keeps
+  them off the roster for those days until the manager declines it.
+- **My shifts** (`/today`) — their own published shifts for the next two weeks: times,
   task ("Soft Setup · Smith Wedding"), task instructions, event notes and run of show,
   unpaid break and hours per day; a button to ask for a change; and a timeline of
   today's and tomorrow's events. They never see anyone else's shifts or details.
 
-**Admin** (`/admin`, password-protected):
+**Manager** (`/admin`, password-protected). A sidebar (collapsible on desktop, a menu
+on phones and tablets) and a top bar with where you are, **reload from Google
+Sheets**, the **alert bell** (how many things need a decision) and the account menu.
 
-- **Dashboard** — this fortnight's positions filled, rostered hours and estimated
-  minimum labour cost; a "Needs attention" list (open positions, roster problems,
-  people over hour limits, qualifications expiring or expired, drafts, sheet rows that
-  can't be read), each linking to the event or person; staff requests to approve or
-  decline; the next seven days. Buttons for **Create event** and **Generate roster**.
-- **Roster** — one pay fortnight at a time (‹ ›). Two views:
-  - **Events**: a card per event with its times, setup and pack-down, each task's
-    staffing (`Food Service 3/4`), the team, hours and estimated cost, warnings and
-    draft/published status. Click a card to staff it.
-  - **Timeline**: each day on a time axis — every task's required time with short
-    stretches hatched red and incomplete team work hatched amber, then every person's
-    shifts with task changes, breaks and overlaps (⚠).
-  - Buttons: **Generate roster**, **Publish drafts**, **Clear unlocked** (takes
-    everyone who isn't locked off the fortnight from today on), **Save to Roster tab**
-    (a printable roster in the sheet, published events only), and a link to
-    **Wages**. Below: hours per person for week 1, week 2 and the fortnight.
-- **Events** — create, edit, duplicate and delete events. Editing an event's start time
-  never moves its tasks unless you tick "Also move every task's times".
-- **Staff** — everyone in sheet order, with type, award level, skills, availability and
-  flags. A person's **profile** holds their employee ID, active/inactive, type, award
-  level, skills and qualifications, work restrictions, preferred shifts, availability
-  and requests, and a password reset.
+- **Dashboard** — this fortnight's upcoming events, unfilled positions, roster
+  conflicts and planned staff hours (with the estimated cost); today's events and the
+  next 14 days with each event's staffing and status; **Needs attention**: roster
+  conflicts, unfilled positions, availability problems, qualifications expiring or
+  expired, hour limits and sheet rows that can't be read, each linking straight to the
+  event, task or person; staff requests to approve or decline; drafts not yet
+  published.
+- **Roster** — one pay fortnight at a time (‹ ›, Today), the whole fortnight or one
+  week, with filters by event, staff member and department (setup and pack-down / food
+  and beverage / leadership) and a search. Three views:
+  - **Events**: each event as a row with its status, times, setup and pack-down,
+    venue, guests, positions filled and hours; expand it to see its tasks grouped by
+    department (`Food Service 3/4` with the people on it). Click a task to fill it.
+  - **Timeline**: each day on a time axis — every task's time with short stretches
+    hatched and labelled, incomplete team work marked, then every person's shifts with
+    task changes, breaks and overlaps (⚠). Click a bar to open its task.
+  - **Staff**: staff down, days across — each person's shifts, time off and whether
+    they're free, with their fortnight hours and rule checks.
+  - Actions: **Generate roster**, **Publish drafts**, and under ⋯ **Clear unlocked
+    assignments**, **Save to Roster tab** (a printable roster in the sheet, published
+    events only) and the hours and wages report.
+  - **Status** of each event, always with an icon and words: **Draft** (positions
+    still open), **Ready for review** (every position filled by people who pass every
+    check — publish when ready), **Published**, or **Needs attention** (a conflict,
+    an unsafe or unconfirmed task, someone who can't work what they're on, or a
+    published event with gaps). Names in every slot isn't enough to count as complete.
+- **Events** — upcoming, drafts, past or all, with search; create, edit
+  (`/admin/events/<id>`), duplicate and delete (with a confirmation naming the
+  event). Editing an event's start time never moves its tasks unless you tick "Also
+  move every task's times".
+- **Staff** — a directory in sheet order: search by name or employee ID, filter by
+  active, type and skill or qualification; each person's top skills, type and award
+  level, usual week, hours this fortnight and profile flags. A person's **profile**
+  (side panel) has: employment details; skills and capabilities (Not verified, Not yet
+  competent, Learning, Trained, Experienced, Qualified/authorised, each with who
+  checked it and when); qualifications with expiry and work restrictions; availability,
+  preferences and requests; scheduled shifts and hours; manager notes; password reset.
+- **Availability** — who's free on a date (and time), time-off requests to answer,
+  approved time off coming up, everyone's usual week and a "who's free when" heatmap.
+- **Reports** — by pay fortnight: **Hours** (week 1, week 2, fortnight, rule checks),
+  **Wages** (estimated minimum award pay per person with a breakdown per pay item and
+  per shift) and **Events** (positions, planned and rostered hours, estimated cost),
+  each downloadable as CSV. The old `/admin/wages` links open the Wages report.
 - **Settings** — task types, skills and qualifications, event templates, matching
-  priorities, and pay (fortnight start, public holidays, award rates).
-- **Wages** (from the Roster page) — minimum award pay per person and per event, with
-  a breakdown per pay item and per shift, and a CSV download.
+  priorities, and pay (fortnight start, public holidays, award rates); each section
+  saves on its own.
 
 ## Tasks
 
@@ -95,7 +121,7 @@ An event saved before tasks existed (or one that only needs general staff) has a
 
 **Templates** save an event's whole staffing structure, with times relative to the
 event's start or end, for recurring weddings, conferences and dinners. Three are built
-in; save your own from an event's Review step.
+in; save your own with "Save these tasks as a template" on the event form.
 
 ## Skills, qualifications and restrictions
 
@@ -150,8 +176,8 @@ in the meantime isn't overwritten.
 
 ## Changing the roster by hand
 
-In an event, open a task: **Add** (best fit first), **Replace**, change one person's
-times, **Lock** (Clear keeps locked people), or take them off. People who fail a check
+On the roster, click a task: **Assign** (best fit first), **Replace**, change one
+person's times, **Lock** (Clear keeps locked people), or take them off. People who fail a check
 are listed separately with the reason:
 
 - **Can't be rostered:** missing or expired qualification, work restriction, a skill
@@ -219,7 +245,7 @@ These are **estimates of award minimums, not a payroll result.** Rates are from 
 Fair Work Ombudsman pay guide effective 1 July 2026 (award clauses 11, 15, 16, 28 and
 29) and go up every 1 July: copy the new hourly rates from the
 [pay guide](https://www.fairwork.gov.au/pay-and-wages/minimum-wages/pay-guides) into
-**Settings → Pay and award** (the Wages page warns when a fortnight is past 30 June and
+**Settings → Pay and award** (the Wages report warns when a fortnight is past 30 June and
 the built-in rates are still in use). Add your state's public holidays there too. Not
 included: junior and apprentice rates, allowances, split-shift or other rules not
 listed above, annualised salaries, and anything an enterprise agreement changes. Pay is
@@ -238,8 +264,8 @@ before tax and super — check anything unusual with the Fair Work pay calculato
 - **Wrong passwords** — eight in 15 minutes for one staff name (or for the admin) and
   further attempts are refused for a while. This is kept in the server's memory.
 - **Staff pages** only receive the logged-in person's own shifts and requests, and
-  published events' public details. Restrictions, skills, pay and other people's
-  shifts are admin-only.
+  published events' public details. Restrictions, skills, manager notes, pay and other
+  people's shifts are admin-only.
 - Everything sent to the server is validated there. Google API errors are logged
   without their request details, so access tokens never reach the logs.
 - **Saving safely:** each change is one read and one write of the tab, made while
@@ -346,7 +372,8 @@ sheet.
 
 **Availability tab** — one row per staff member:
 `No | Name | Status | Monday … Sunday | Last Updated | Password | Type | Hourly Rate |
-Award Level | Employee ID | Active | Skills | Restrictions | Preferences | Requests`.
+Award Level | Employee ID | Active | Skills | Restrictions | Preferences | Requests |
+Manager Notes`.
 Day cells read `Unavailable`, `All day` or `HH:MM-HH:MM`. Names match
 case-insensitively. Saving rewrites only that person's row and new people are appended,
 so the sheet's row order is kept and two people saving at once don't overwrite each
@@ -354,8 +381,9 @@ other. `Password` is a hash (`scrypt$…`), or the old plain text until converte
 the cell to reset it. `Type` is `Casual`, `Part-time`, `Full-time` or `Student` (blank
 = Casual). `Award Level` is `Introductory` or `Level 1`–`Level 6`. `Hourly Rate` is no
 longer used but kept. `Active` is blank (active) or `Inactive`. `Skills`,
-`Restrictions` and `Requests` are JSON written by the app; `Preferences` is a list like
-`Evenings, Weekends`. To remove someone, mark them inactive or delete their row.
+`Restrictions` and `Requests` are JSON written by the app (a skill's level can also be
+`not_yet` — assessed, not yet competent); `Preferences` is a list like
+`Evenings, Weekends`; `Manager Notes` is free text only managers see. To remove someone, mark them inactive or delete their row.
 
 **Events tab** — one row per event:
 `No | Event Name | Date | Start Time | End Time | Location | Actions | Notes | ID |

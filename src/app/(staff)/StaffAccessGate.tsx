@@ -2,6 +2,9 @@
 
 import { FormEvent, ReactNode, useEffect, useState } from "react";
 import { WeekAvailability, emptyWeek } from "@/lib/availability";
+import { Button } from "@/components/ui/Button";
+import { controlClass } from "@/components/ui/Field";
+import { Spinner } from "@/components/ui/Spinner";
 
 // "idle": no name entered yet / not yet checked.
 // "checking": looking up whether this name has a password set, or verifying one.
@@ -30,6 +33,8 @@ export interface StaffAccessProps {
   // Availability loaded for this name while unlocking, if any — callers that
   // don't care (e.g. Today's Events) can just ignore it.
   initialWeek: WeekAvailability;
+  // Whether they've saved their availability before (false: "not set yet").
+  initialSet: boolean;
   // Forgets the current session and returns to the name field.
   reset: () => void;
   // Re-locks with an error, e.g. after a privileged action the gate itself
@@ -48,6 +53,7 @@ export default function StaffAccessGate({
   const [accessError, setAccessError] = useState<string | null>(null);
   const [initialWeek, setInitialWeek] = useState<WeekAvailability>(emptyWeek());
   const [initialRequests, setInitialRequests] = useState<OwnRequest[]>([]);
+  const [initialSet, setInitialSet] = useState(true);
 
   // Remembers the last name used on this device, so staff only type it once.
   useEffect(() => {
@@ -94,6 +100,7 @@ export default function StaffAccessGate({
         setAccess("existing");
       } else {
         setInitialWeek(data.week);
+        setInitialSet(Boolean(data.set));
         setAccess("new");
       }
     } catch {
@@ -131,6 +138,7 @@ export default function StaffAccessGate({
         return;
       }
       setInitialWeek(data.week);
+      setInitialSet(data.set !== false);
       setInitialRequests(data.requests ?? []);
       setAccess("unlocked");
     } catch {
@@ -140,24 +148,22 @@ export default function StaffAccessGate({
   }
 
   if (access === "unlocked") {
-    return <>{children({ name: name.trim(), password, initialWeek, initialRequests, reset, lock })}</>;
+    return <>{children({ name: name.trim(), password, initialWeek, initialSet, initialRequests, reset, lock })}</>;
   }
 
+  const asking = access === "new" || access === "existing";
   return (
-    <div className="mt-6">
+    <div className="mt-5 space-y-4">
       <form
         onSubmit={(e: FormEvent) => {
           e.preventDefault();
           checkAccess();
         }}
       >
-        <label
-          htmlFor="staff-name"
-          className="block text-sm font-medium text-zinc-700 dark:text-zinc-300"
-        >
+        <label htmlFor="staff-name" className="mb-1 block text-[13px] font-medium text-fg-2">
           Your name
         </label>
-        <div className="mt-1 flex gap-2">
+        <div className="flex gap-2">
           <input
             id="staff-name"
             type="text"
@@ -165,79 +171,71 @@ export default function StaffAccessGate({
             value={name}
             disabled={access !== "idle"}
             onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. Elon"
-            className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-base text-zinc-900 outline-none focus:border-zinc-500 disabled:bg-zinc-100 disabled:text-zinc-500 sm:text-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:disabled:bg-zinc-900/60 dark:disabled:text-zinc-500"
+            placeholder="First and last name"
+            className={`${controlClass} h-10`}
           />
           {access === "idle" && (
-            <button
-              type="submit"
-              disabled={!name.trim()}
-              className="shrink-0 rounded-lg bg-zinc-900 px-4 py-2 font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-            >
+            <Button type="submit" variant="primary" disabled={!name.trim()} className="h-10">
               Continue
-            </button>
+            </Button>
+          )}
+          {asking && (
+            <Button variant="ghost" onClick={reset} className="h-10">
+              Change
+            </Button>
           )}
         </div>
         {access === "checking" && (
-          <p className="mt-1 text-xs text-zinc-400">Checking…</p>
+          <p className="mt-1.5 flex items-center gap-1.5 text-xs text-muted" role="status">
+            <Spinner size={12} /> Checking…
+          </p>
         )}
         {access === "idle" && accessError && (
-          <p className="mt-1 text-xs text-red-600 dark:text-red-400">{accessError}</p>
+          <p className="mt-1.5 text-xs text-danger" role="alert">
+            {accessError}
+          </p>
         )}
       </form>
 
-      {(access === "new" || access === "existing") && (
-        <div className="mt-6 rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/60">
-          <label
-            htmlFor="staff-password"
-            className="block text-sm font-medium text-zinc-700 dark:text-zinc-300"
-          >
-            {access === "new" ? "Choose a password" : "Enter your password"}
+      {asking && (
+        <form
+          onSubmit={(e: FormEvent) => {
+            e.preventDefault();
+            if (access === "new") claimPassword();
+            else unlockExisting();
+          }}
+          className="rounded-lg border border-line bg-surface-2 p-4"
+        >
+          <label htmlFor="staff-password" className="block text-[13px] font-medium text-fg-2">
+            {access === "new" ? "Choose a password" : "Your password"}
           </label>
-          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-            {access === "new"
-              ? "You'll use this next time to log in."
-              : "This name already has a password set."}
+          <p className="mt-0.5 text-xs text-muted">
+            {access === "new" ? "You'll use it each time you open this page." : "Ask your manager to reset it if you've forgotten it."}
           </p>
-          <form
-            onSubmit={(e: FormEvent) => {
-              e.preventDefault();
-              if (access === "new") claimPassword();
-              else unlockExisting();
-            }}
-            className="mt-2 flex gap-2"
-          >
+          <div className="mt-2 flex gap-2">
             <input
               id="staff-password"
               type="password"
               autoFocus
+              autoComplete={access === "new" ? "new-password" : "current-password"}
               value={password}
               onChange={(e) => {
                 setPassword(e.target.value);
                 setAccessError(null);
               }}
-              className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-base text-zinc-900 outline-none focus:border-zinc-500 sm:text-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+              aria-invalid={accessError ? true : undefined}
+              className={`${controlClass} h-10`}
             />
-            <button
-              type="submit"
-              className="shrink-0 rounded-lg bg-zinc-900 px-4 py-2 font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-            >
+            <Button type="submit" variant="primary" className="h-10">
               {access === "new" ? "Continue" : "Unlock"}
-            </button>
-          </form>
+            </Button>
+          </div>
           {accessError && (
-            <p className="mt-2 text-xs text-red-600 dark:text-red-400">
+            <p className="mt-1.5 text-xs text-danger" role="alert">
               {accessError}
             </p>
           )}
-          <button
-            type="button"
-            onClick={reset}
-            className="mt-2 text-xs font-medium text-zinc-500 underline-offset-2 hover:text-zinc-900 hover:underline dark:text-zinc-400 dark:hover:text-zinc-50"
-          >
-            Not you? Use a different name
-          </button>
-        </div>
+        </form>
       )}
     </div>
   );

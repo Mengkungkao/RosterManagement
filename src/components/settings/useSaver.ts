@@ -2,30 +2,33 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { send } from "../api";
+import { send } from "../admin/api";
+import { useToast } from "../ui/feedback";
 
-// Saving a settings section: one request, a message, then fresh data.
+// Saving a settings section: one request, a toast once the server has saved
+// (or the reason it didn't), then fresh data.
 export function useSaver() {
   const router = useRouter();
+  const toast = useToast();
   const [refreshing, startRefresh] = useTransition();
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   async function save(url: string, body: unknown, success: string): Promise<boolean> {
     setSaving(true);
-    setMessage(null);
+    setError(null);
     const result = await send(url, "PUT", body);
     setSaving(false);
     if (!result.ok) {
-      setMessage({ type: "error", text: result.error });
+      setError(result.error);
       return false;
     }
-    setMessage({ type: "success", text: success });
+    toast.success(success);
     startRefresh(() => router.refresh());
     return true;
   }
 
-  return { save, saving: saving || refreshing, message };
+  return { save, saving: saving || refreshing, error };
 }
 
 export function move<T>(list: T[], index: number, by: number): T[] {

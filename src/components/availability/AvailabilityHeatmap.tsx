@@ -5,6 +5,7 @@ import { DAYS, type Day } from "@/lib/availability";
 import { addDays } from "@/lib/dates";
 import { checkAvailability } from "@/lib/roster";
 import type { StaffMember } from "@/lib/staff";
+import { Card } from "../ui/Card";
 
 interface Props {
   staff: StaffMember[];
@@ -86,64 +87,64 @@ export default function AvailabilityHeatmap({ staff }: Props) {
   const activeCell = active ? heatmap[active.day][active.hour] : null;
 
   return (
-    <div className="mt-3 flex flex-col gap-[22px] lg:flex-row">
-      <div className="w-full shrink-0 rounded-2xl border border-zinc-200 bg-white p-[18px] shadow-sm lg:w-[230px] dark:border-zinc-800 dark:bg-zinc-950">
+    <div className="flex flex-col gap-4 lg:flex-row">
+      <Card as="div" className="w-full shrink-0 p-4 lg:w-[230px]">
         {activeCell && active ? (
           <>
-            <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+            <p className="text-lg font-semibold text-fg">
               {activeCell.available.length}/{total} available
             </p>
-            <p className="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
+            <p className="mt-0.5 text-sm text-muted">
               {active.day} {formatHour(active.hour)}
             </p>
             <div className="mt-4">
-              <h3 className="text-xs font-semibold tracking-wide text-emerald-700 uppercase dark:text-emerald-400">
+              <h3 className="text-xs font-semibold tracking-wide text-success uppercase">
                 Available
               </h3>
               {activeCell.available.length > 0 ? (
-                <ul className="mt-1 space-y-0.5 text-sm text-zinc-700 dark:text-zinc-300">
+                <ul className="mt-1 space-y-0.5 text-sm text-fg-2">
                   {activeCell.available.map((name) => (
                     <li key={name}>{name}</li>
                   ))}
                 </ul>
               ) : (
-                <p className="mt-1 text-sm text-zinc-400 dark:text-zinc-500">No one</p>
+                <p className="mt-1 text-sm text-subtle">No one</p>
               )}
             </div>
             <div className="mt-4">
-              <h3 className="text-xs font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
+              <h3 className="text-xs font-semibold tracking-wide text-muted uppercase">
                 Unavailable
               </h3>
               {activeCell.unavailable.length > 0 ? (
-                <ul className="mt-1 space-y-0.5 text-sm text-zinc-500 dark:text-zinc-400">
+                <ul className="mt-1 space-y-0.5 text-sm text-muted">
                   {activeCell.unavailable.map((name) => (
                     <li key={name}>{name}</li>
                   ))}
                 </ul>
               ) : (
-                <p className="mt-1 text-sm text-zinc-400 dark:text-zinc-500">No one</p>
+                <p className="mt-1 text-sm text-subtle">No one</p>
               )}
             </div>
           </>
         ) : (
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+          <p className="text-sm text-muted">
             Hover or tap a cell on the grid to see who&apos;s available at that day and
             hour.
           </p>
         )}
-      </div>
+      </Card>
 
-      <div className="min-w-0 flex-1 rounded-2xl border border-zinc-200 bg-white p-[18px] shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+      <Card as="div" className="min-w-0 flex-1 p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="font-medium text-zinc-900 dark:text-zinc-50">
-            Group&apos;s Availability
+          <h2 className="text-sm font-semibold text-fg">
+            Who&apos;s free when
           </h2>
-          <div className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
+          <div className="flex items-center gap-2 text-xs text-muted">
             <span>
               0/{total}
             </span>
             <div
-              className="h-[11px] w-[100px] overflow-hidden rounded-full bg-[linear-gradient(to_right,var(--legend-light-from),var(--legend-light-to))] ring-1 ring-zinc-200 dark:bg-[linear-gradient(to_right,var(--legend-dark-from),var(--legend-dark-to))] dark:ring-zinc-800"
+              className="h-[11px] w-[100px] overflow-hidden rounded-full bg-[linear-gradient(to_right,var(--legend-light-from),var(--legend-light-to))] ring-1 ring-line dark:bg-[linear-gradient(to_right,var(--legend-dark-from),var(--legend-dark-to))]"
               style={
                 {
                   "--legend-light-from": rgbString(LIGHT_FROM),
@@ -158,8 +159,8 @@ export default function AvailabilityHeatmap({ staff }: Props) {
             </span>
           </div>
         </div>
-        <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">
-          Hover or tap the calendar to see who&apos;s available.
+        <p className="mt-1 text-xs text-muted">
+          A typical week from everyone&apos;s weekly availability (not date exceptions). Hover or tap an hour to see who&apos;s free.
         </p>
 
         <div
@@ -169,11 +170,11 @@ export default function AvailabilityHeatmap({ staff }: Props) {
           <table className="w-full min-w-[500px] border-collapse text-xs">
             <thead>
               <tr>
-                <th className="sticky left-0 z-10 w-[50px] bg-white px-1 py-1 text-left font-medium text-zinc-500 dark:bg-zinc-950 dark:text-zinc-400" />
+                <th className="sticky left-0 z-10 w-[50px] bg-surface px-1 py-1 text-left font-medium text-muted" />
                 {DAYS.map((day) => (
                   <th
                     key={day}
-                    className="px-1 py-1 text-center font-medium text-zinc-600 dark:text-zinc-400"
+                    className="px-1 py-1 text-center font-medium text-muted"
                   >
                     {day.slice(0, 3)}
                   </th>
@@ -183,7 +184,7 @@ export default function AvailabilityHeatmap({ staff }: Props) {
             <tbody>
               {Array.from({ length: HOURS }, (_, hour) => (
                 <tr key={hour}>
-                  <td className="sticky left-0 z-10 bg-white px-1 py-0 text-right text-[11px] text-zinc-400 dark:bg-zinc-950 dark:text-zinc-500">
+                  <td className="sticky left-0 z-10 bg-surface px-1 py-0 text-right text-[11px] text-muted tabular-nums">
                     {formatHour(hour)}
                   </td>
                   {DAYS.map((day) => {
@@ -191,7 +192,7 @@ export default function AvailabilityHeatmap({ staff }: Props) {
                     const ratio = total > 0 ? cell.available.length / total : 0;
                     const isActive = active?.day === day && active?.hour === hour;
                     return (
-                      <td key={day} className="border border-zinc-100 p-0 leading-none dark:border-zinc-900">
+                      <td key={day} className="border border-line p-0 leading-none">
                         <button
                           type="button"
                           onMouseEnter={() => setActive({ day, hour })}
@@ -201,8 +202,8 @@ export default function AvailabilityHeatmap({ staff }: Props) {
                           style={cellColorVars(ratio)}
                           className={`block h-[22px] w-full bg-[var(--cell-light)] transition-shadow dark:bg-[var(--cell-dark)] ${
                             isActive
-                              ? "ring-2 ring-inset ring-zinc-900 dark:ring-white"
-                              : "hover:ring-1 hover:ring-inset hover:ring-zinc-400 dark:hover:ring-zinc-500"
+                              ? "ring-2 ring-inset ring-white"
+                              : "hover:ring-1 hover:ring-inset hover:ring-white/60"
                           }`}
                         />
                       </td>
@@ -213,7 +214,7 @@ export default function AvailabilityHeatmap({ staff }: Props) {
             </tbody>
           </table>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }

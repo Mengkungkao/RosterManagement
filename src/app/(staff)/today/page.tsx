@@ -5,6 +5,14 @@ import type { EventRecord } from "@/lib/events";
 import { colorForEvent } from "@/lib/event-colors";
 import { formatHours, formatWeekdayDate, mod1440, toMinutes } from "@/lib/dates";
 import { getMelbourneMinutesNow, layoutDayEvents, type PositionedEvent } from "@/lib/roster-grid";
+import { Alert } from "@/components/ui/Alert";
+import { Button } from "@/components/ui/Button";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { Card } from "@/components/ui/Card";
+import { Textarea } from "@/components/ui/Field";
+import { Icon } from "@/components/ui/Icon";
+import { cn } from "@/components/ui/cn";
+import { useToast } from "@/components/ui/feedback";
 import StaffAccessGate, { type OwnRequest, StaffAccessProps } from "../StaffAccessGate";
 import { StatusChip, sendRequest } from "../StaffRequests";
 
@@ -82,6 +90,7 @@ function ChangeRequest({
   onChange: (r: OwnRequest[]) => void;
   lock: (message?: string) => void;
 }) {
+  const toast = useToast();
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
@@ -90,7 +99,10 @@ function ChangeRequest({
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!note.trim()) return;
+    if (!note.trim()) {
+      setError("Say what you need changed.");
+      return;
+    }
     setBusy(true);
     setError(null);
     const result = await sendRequest("POST", { name, password, kind: "change", eventId: shift.eventId, note });
@@ -103,43 +115,44 @@ function ChangeRequest({
     onChange(result.requests);
     setOpen(false);
     setNote("");
+    toast.success("Sent to your manager.");
   }
 
   return (
-    <div className="mt-1">
+    <div className="mt-2">
       {existing.map((r) => (
-        <div key={r.id} className="mt-1 flex flex-wrap items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
+        <div key={r.id} className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">
           <StatusChip status={r.status} /> You asked: “{r.note}”
         </div>
       ))}
       {!open ? (
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="mt-1 text-xs font-medium text-zinc-500 underline-offset-2 hover:text-zinc-900 hover:underline dark:text-zinc-400 dark:hover:text-zinc-50"
-        >
+        <Button variant="link" size="sm" className="mt-1 text-xs" onClick={() => setOpen(true)}>
           Can&apos;t make it, or something&apos;s wrong? Ask for a change
-        </button>
+        </Button>
       ) : (
         <form onSubmit={submit} className="mt-2 space-y-2">
-          <textarea
+          <Textarea
             autoFocus
             rows={2}
             value={note}
             maxLength={500}
             onChange={(e) => setNote(e.target.value)}
             placeholder="e.g. I have an exam until 6pm — could I start at 18:30?"
-            className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-base text-zinc-900 outline-none focus:border-zinc-500 sm:text-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+            aria-label="What you need changed"
           />
+          {error && (
+            <p className="text-xs text-danger" role="alert">
+              {error}
+            </p>
+          )}
           <div className="flex gap-2">
-            <button type="submit" disabled={busy || !note.trim()} className="rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900">
-              {busy ? "Sending…" : "Send to my manager"}
-            </button>
-            <button type="button" onClick={() => setOpen(false)} className="text-sm text-zinc-500 underline">
+            <Button type="submit" size="sm" variant="primary" icon="send" loading={busy}>
+              Send to my manager
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>
               Cancel
-            </button>
+            </Button>
           </div>
-          {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
         </form>
       )}
     </div>
@@ -164,56 +177,58 @@ function MyShifts({
   lock: (message?: string) => void;
 }) {
   return (
-    <section className="mt-4">
-      <h2 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-        Your shifts <span className="font-normal text-zinc-400">· next 2 weeks</span>
+    <section className="mt-5">
+      <h2 className="text-sm font-semibold text-fg">
+        Your shifts <span className="font-normal text-muted">· next 2 weeks</span>
       </h2>
       {workDays.length === 0 ? (
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+        <p className="mt-2 rounded-lg border border-dashed border-line-strong px-4 py-6 text-center text-sm text-muted">
           You&apos;re not rostered on in the next two weeks.
         </p>
       ) : (
-        <ul className="mt-2 divide-y divide-zinc-100 rounded-lg border border-zinc-200 dark:divide-zinc-900 dark:border-zinc-800">
+        <ul className="mt-2 space-y-3">
           {workDays.map((day) => (
-            <li
-              key={day.date}
-              className={`px-3 py-3 ${day.date === today ? "bg-emerald-50 dark:bg-emerald-950/40" : ""}`}
-            >
-              <div className="flex items-baseline justify-between gap-3">
-                <span className="font-medium text-zinc-900 dark:text-zinc-50">
-                  {day.date === today ? "Today" : formatWeekdayDate(day.date)}
-                </span>
-                <span className="shrink-0 text-sm text-zinc-500 tabular-nums dark:text-zinc-400">
+            <li key={day.date} className={cn("rounded-lg border px-4 py-3", day.date === today ? "border-primary bg-primary-soft" : "border-line bg-surface")}>
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+                <span className="font-semibold text-fg">{day.date === today ? "Today" : formatWeekdayDate(day.date)}</span>
+                <span className="text-[13px] text-muted tabular-nums">
                   {formatHours(day.hours)}
-                  {day.breaks.length > 0 && ` · break ${day.breaks.join(", ")}`}
+                  {day.breaks.length > 0 && ` · unpaid break ${day.breaks.join(", ")}`}
                 </span>
               </div>
               {day.shifts.map((shift) => (
-                <div key={`${shift.eventId}-${shift.taskName}-${shift.time}`} className="mt-1.5 text-sm text-zinc-700 dark:text-zinc-300">
-                  <div>
-                    <span className="font-medium tabular-nums">{shift.time}</span>{" "}
+                <div key={`${shift.eventId}-${shift.taskName}-${shift.time}`} className="mt-2.5 border-t border-line pt-2.5 first-of-type:border-0 first-of-type:pt-0">
+                  <p className="text-sm text-fg">
+                    <span className="font-semibold tabular-nums">{shift.time}</span>{" "}
                     {shift.taskName ? (
                       <>
-                        <span className="font-medium">{shift.taskName}</span> · {shift.eventName}
+                        <span className="font-medium">{shift.taskName}</span>
+                        <span className="text-fg-2"> · {shift.eventName}</span>
                       </>
                     ) : (
-                      shift.eventName
+                      <span className="font-medium">{shift.eventName}</span>
                     )}
-                    {shift.location && <span className="text-zinc-500 dark:text-zinc-400"> · {shift.location}</span>}
-                  </div>
-                  {shift.taskNotes && <p className="text-xs text-zinc-600 dark:text-zinc-400">Your task: {shift.taskNotes}</p>}
+                  </p>
+                  {shift.location && (
+                    <p className="mt-0.5 flex items-center gap-1 text-xs text-muted">
+                      <Icon name="mapPin" size={12} />
+                      {shift.location}
+                    </p>
+                  )}
+                  {shift.taskNotes && <p className="mt-1 rounded-md bg-surface-2 px-2 py-1 text-xs text-fg-2">Your task: {shift.taskNotes}</p>}
                   {(shift.eventNotes || shift.actions.length > 0) && (
-                    <details className="mt-0.5 text-xs text-zinc-600 dark:text-zinc-400">
-                      <summary className="cursor-pointer">Event {shift.eventTime}, notes and run of show</summary>
+                    <details className="mt-1.5 text-xs text-fg-2">
+                      <summary className="cursor-pointer text-muted hover:text-fg">Event {shift.eventTime} · notes and run of show</summary>
                       {shift.eventNotes && <p className="mt-1 whitespace-pre-wrap">{shift.eventNotes}</p>}
                       {shift.actions.length > 0 && (
-                        <ul className="mt-1">
+                        <ol className="mt-1 space-y-0.5">
                           {shift.actions.map((a, i) => (
                             <li key={i}>
-                              <span className="tabular-nums">{a.time || shift.eventTime.slice(0, 5)}</span> {a.label}
+                              <span className="inline-block w-11 text-muted tabular-nums">{a.time || shift.eventTime.slice(0, 5)}</span>
+                              {a.label}
                             </li>
                           ))}
-                        </ul>
+                        </ol>
                       )}
                     </details>
                   )}
@@ -330,7 +345,7 @@ function EventCard({
       )}
 
       {pe.event.notes && (
-        <div className="shrink-0 border-t border-black/10 px-1.5 py-1 whitespace-pre-wrap opacity-80 dark:border-white/10">
+        <div className="shrink-0 border-t border-line px-1.5 py-1 whitespace-pre-wrap opacity-80 ">
           {pe.event.notes}
         </div>
       )}
@@ -381,7 +396,7 @@ function ResizeHandle({
       onPointerUp={handlePointerUp}
       onDoubleClick={onReset}
       title="Drag to resize · double-click to auto-fit"
-      className="absolute top-0 right-0 z-40 h-full w-2.5 cursor-col-resize touch-none select-none hover:bg-zinc-300 active:bg-zinc-400 dark:hover:bg-zinc-700"
+      className="absolute top-0 right-0 z-40 h-full w-2.5 cursor-col-resize touch-none select-none hover:bg-line-strong active:bg-line-strong"
     />
   );
 }
@@ -401,8 +416,8 @@ function NowLine({
   const top = timeToPx(nowMinutes, windowStart, span, containerHeight);
   return (
     <div className="absolute inset-x-0 z-10 flex items-center" style={{ top }}>
-      <span className="-ml-1 h-2 w-2 shrink-0 rounded-full bg-red-500" />
-      <div className="h-px flex-1 bg-red-500" />
+      <span className="-ml-1 h-2 w-2 shrink-0 rounded-full bg-danger" />
+      <div className="h-px flex-1 bg-danger" />
     </div>
   );
 }
@@ -423,7 +438,7 @@ function HourGridlines({
       {hourMarks.map((m) => (
         <div
           key={m}
-          className="absolute inset-x-0 border-t border-zinc-100 dark:border-zinc-900"
+          className="absolute inset-x-0 border-t border-line"
           style={{ top: timeToPx(m, windowStart, span, containerHeight) }}
         />
       ))}
@@ -450,7 +465,7 @@ function DayColumn({
 }) {
   return (
     <div
-      className="relative border-l border-zinc-100 dark:border-zinc-900"
+      className="relative border-l border-line"
       style={{ height: containerHeight + GRID_TOP_PADDING + GRID_BOTTOM_PADDING }}
     >
       <HourGridlines
@@ -481,6 +496,7 @@ function DayColumn({
 }
 
 function TodayEventsView({ name, password, reset, lock }: StaffAccessProps) {
+  const [attempt, setAttempt] = useState(0);
   const [requests, setRequests] = useState<OwnRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -534,7 +550,7 @@ function TodayEventsView({ name, password, reset, lock }: StaffAccessProps) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [attempt]);
 
   const positionedByDay = useMemo(
     () => days.map((day) => layoutDayEvents(day.events)),
@@ -548,24 +564,39 @@ function TodayEventsView({ name, password, reset, lock }: StaffAccessProps) {
   return (
     <>
       <div className="mt-6 flex items-center justify-between gap-3">
-        <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+        <p className="text-sm font-medium text-fg-2">
           Logged in as {name}
         </p>
         <button
           type="button"
           onClick={reset}
-          className="text-xs font-medium text-zinc-500 underline-offset-2 hover:text-zinc-900 hover:underline dark:text-zinc-400 dark:hover:text-zinc-50"
+          className="text-xs font-medium text-muted underline-offset-2 hover:text-fg hover:underline"
         >
           Not you?
         </button>
       </div>
 
       {loading && (
-        <p className="mt-4 text-sm text-zinc-500 dark:text-zinc-400">Loading…</p>
+        <div className="mt-5 space-y-3" aria-busy="true" aria-label="Loading your shifts">
+          <Skeleton className="h-4 w-40" />
+          <Skeleton className="h-20 rounded-lg" />
+          <Skeleton className="h-20 rounded-lg" />
+        </div>
       )}
 
       {!loading && error && (
-        <p className="mt-4 text-sm text-red-600 dark:text-red-400">{error}</p>
+        <Alert
+          tone="danger"
+          className="mt-4"
+          role="alert"
+          action={
+            <Button size="sm" icon="refresh" onClick={() => setAttempt((n) => n + 1)}>
+              Try again
+            </Button>
+          }
+        >
+          {error}
+        </Alert>
       )}
 
       {!loading && !error && (
@@ -579,14 +610,14 @@ function TodayEventsView({ name, password, reset, lock }: StaffAccessProps) {
             onRequests={setRequests}
             lock={lock}
           />
-          <h2 className="mt-6 text-sm font-medium text-zinc-700 dark:text-zinc-300">
+          <h2 className="mt-6 text-sm font-medium text-fg-2">
             Today &amp; tomorrow
           </h2>
         </>
       )}
 
       {!loading && !error && !windowRange && (
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+        <p className="mt-1 text-sm text-muted">
           No events scheduled today or tomorrow.
         </p>
       )}
@@ -599,7 +630,7 @@ function TodayEventsView({ name, password, reset, lock }: StaffAccessProps) {
           for (let m = windowRange.start; m <= windowRange.end; m += 60) hourMarks.push(m);
 
           return (
-            <div className="mt-2 overflow-hidden border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+            <div className="mt-2 overflow-hidden border border-line bg-surface rounded-lg">
               <div
                 className="grid"
                 style={{
@@ -612,16 +643,16 @@ function TodayEventsView({ name, password, reset, lock }: StaffAccessProps) {
                     .join(" ")}`,
                 }}
               >
-                <div className="border-b border-zinc-100 px-1 py-2 text-[11px] font-medium text-zinc-400 dark:border-zinc-900 dark:text-zinc-500">
+                <div className="border-b border-line px-1 py-2 text-[11px] font-medium text-subtle">
                   Time
                 </div>
                 {days.map((day) => (
                   <div
                     key={day.date}
-                    className="relative border-b border-l border-zinc-100 px-2 py-2 text-xs font-medium text-zinc-700 dark:border-zinc-900 dark:text-zinc-300"
+                    className="relative border-b border-l border-line px-2 py-2 text-xs font-medium text-fg-2"
                   >
                     {day.label}{" "}
-                    <span className="font-normal text-zinc-400">
+                    <span className="font-normal text-subtle">
                       — {formatDayLabel(day.date)}
                     </span>
                     {day.label === "Today" && (
@@ -641,7 +672,7 @@ function TodayEventsView({ name, password, reset, lock }: StaffAccessProps) {
                   {hourMarks.map((m) => (
                     <div
                       key={m}
-                      className="absolute inset-x-0 px-1 text-[11px] text-zinc-400 dark:text-zinc-500"
+                      className="absolute inset-x-0 px-1 text-[11px] text-subtle"
                       style={{ top: timeToPx(m, windowRange.start, span, containerHeight) - 6 }}
                     >
                       {formatMinutes(m)}
@@ -672,20 +703,10 @@ function TodayEventsView({ name, password, reset, lock }: StaffAccessProps) {
 
 export default function TodayPage() {
   return (
-    <div className="flex flex-1 flex-col items-center bg-zinc-50 px-4 pt-6 pb-10 dark:bg-black sm:pt-8 sm:pb-16">
-      <div className="w-full max-w-2xl rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-950 sm:p-8">
-        <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
-          My Shifts
-        </h1>
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-          Log in with your name and password to see the shifts you&apos;re
-          rostered for, and what&apos;s on today and tomorrow.
-        </p>
-
-        <StaffAccessGate>
-          {(access) => <TodayEventsView {...access} />}
-        </StaffAccessGate>
-      </div>
-    </div>
+    <Card className="p-5 sm:p-6">
+      <h1 className="text-xl font-semibold text-fg">My shifts</h1>
+      <p className="mt-1 text-sm text-muted">Sign in to see your shifts, what you&apos;ll be doing, and what&apos;s on today and tomorrow.</p>
+      <StaffAccessGate>{(access) => <TodayEventsView {...access} />}</StaffAccessGate>
+    </Card>
   );
 }

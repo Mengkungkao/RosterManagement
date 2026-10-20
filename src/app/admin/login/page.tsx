@@ -1,7 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { Alert } from "@/components/ui/Alert";
+import { Button } from "@/components/ui/Button";
+import { Field, Input } from "@/components/ui/Field";
+import { Icon } from "@/components/ui/Icon";
 
 export default function AdminLoginPage() {
   const router = useRouter();
@@ -11,6 +16,10 @@ export default function AdminLoginPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!password) {
+      setError("Enter the manager password.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -21,48 +30,49 @@ export default function AdminLoginPage() {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "Login failed");
+        throw new Error(data.error || "Couldn't sign in. Please try again.");
       }
       router.replace("/admin");
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed");
-    } finally {
+      setError(err instanceof Error ? err.message : "Couldn't sign in. Please try again.");
       setSubmitting(false);
     }
   }
 
   return (
-    <div className="flex flex-1 flex-col items-center justify-center bg-zinc-50 px-4 dark:bg-black">
-      <form
-        onSubmit={handleSubmit}
-        className="w-full max-w-sm rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm dark:border-zinc-800 dark:bg-zinc-950"
-      >
-        <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">
-          Admin sign in
-        </h1>
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-          Enter the admin password to manage events, staff and the roster.
-        </p>
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="Password"
-          autoFocus
-          className="mt-5 w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
-        />
+    <div className="flex min-h-dvh flex-col items-center justify-center bg-canvas px-4 py-10">
+      <div className="mb-6 flex items-center gap-2.5 text-fg">
+        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-fg">
+          <Icon name="roster" size={18} />
+        </span>
+        <span className="text-lg font-semibold tracking-tight">RosterManagement</span>
+      </div>
+      <form onSubmit={handleSubmit} className="w-full max-w-sm rounded-xl border border-line bg-surface p-6 shadow-card">
+        <h1 className="text-lg font-semibold text-fg">Manager sign in</h1>
+        <p className="mt-1 text-sm text-muted">Manage events, staff and the roster.</p>
+        <Field label="Password" className="mt-5">
+          <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus autoComplete="current-password" className="h-10" />
+        </Field>
         {error && (
-          <p className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>
+          <Alert tone="danger" className="mt-3" role="alert">
+            {error}
+          </Alert>
         )}
-        <button
-          type="submit"
-          disabled={submitting}
-          className="mt-5 w-full rounded-lg bg-zinc-900 px-4 py-2.5 font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-        >
-          {submitting ? "Signing in…" : "Sign in"}
-        </button>
+        <Button type="submit" variant="primary" loading={submitting} className="mt-5 h-10 w-full">
+          Sign in
+        </Button>
       </form>
+      <p className="mt-6 text-sm text-muted">
+        Staff:{" "}
+        <Link href="/" className="font-medium text-primary-text hover:underline">
+          set your availability
+        </Link>{" "}
+        or{" "}
+        <Link href="/today" className="font-medium text-primary-text hover:underline">
+          see your shifts
+        </Link>
+      </p>
     </div>
   );
 }

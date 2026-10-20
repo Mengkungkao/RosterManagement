@@ -50,3 +50,10 @@ export function summarizeWeek(week: WeekAvailability): string {
   }
   return "Partially available";
 }
+
+// Whether someone has given their availability: they saved it on the staff
+// page, or a manager typed it into the sheet. Otherwise it's "not set yet"
+// (and reads as unavailable).
+export function availabilityGiven(week: WeekAvailability, updatedAt: string): boolean {
+  return Boolean(updatedAt) || DAYS.some((day) => week[day].status !== "unavailable");
+}

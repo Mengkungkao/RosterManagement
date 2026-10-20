@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { availabilityGiven } from "@/lib/availability";
 import { badRequest, readJson, serverError } from "@/lib/http";
 import { readStaff } from "@/lib/staff";
 import { staffLogin } from "@/lib/staff-auth";
@@ -15,7 +16,7 @@ export async function POST(req: NextRequest) {
     const login = await staffLogin(name, password, false);
     if (!login.ok) return NextResponse.json({ ok: false, error: login.error }, { status: login.status });
     const me = await readStaff(name);
-    return NextResponse.json({ ok: true, week: login.week, requests: ownRequests(me) });
+    return NextResponse.json({ ok: true, week: login.week, set: me ? availabilityGiven(me.week, me.updatedAt) : false, requests: ownRequests(me) });
   } catch (err) {
     return serverError("verify the password", err);
   }

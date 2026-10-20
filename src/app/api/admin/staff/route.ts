@@ -6,7 +6,7 @@ import { isEmploymentType } from "@/lib/employment";
 import { badRequest, readJson, serverError, unauthorized } from "@/lib/http";
 import { parsePreferencesInput, parseRestrictionsInput } from "@/lib/profile";
 import { parseSkillsInput } from "@/lib/skills";
-import { MAX_NAME_LENGTH, type StaffChanges, addStaff, updateStaff } from "@/lib/staff";
+import { MAX_NAME_LENGTH, MAX_NOTES_LENGTH, type StaffChanges, addStaff, updateStaff } from "@/lib/staff";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +38,8 @@ export async function POST(req: NextRequest) {
 }
 
 // Changes a staff member's profile: type, award level, employee ID, active,
-// skills, restrictions, preferences, a decision on a request, or a password reset.
+// skills, restrictions, preferences, manager notes, a decision on a request,
+// or a password reset.
 export async function PATCH(req: NextRequest) {
   if (!(await isAdminRequest())) return unauthorized();
   const body = ((await readJson(req)) ?? {}) as Record<string, unknown>;
@@ -59,6 +60,12 @@ export async function PATCH(req: NextRequest) {
   if (body.active !== undefined) {
     if (typeof body.active !== "boolean") return badRequest("Invalid active setting");
     changes.active = body.active;
+  }
+  if (body.notes !== undefined) {
+    if (typeof body.notes !== "string" || body.notes.length > MAX_NOTES_LENGTH) {
+      return badRequest(`Notes must be text of at most ${MAX_NOTES_LENGTH} characters`);
+    }
+    changes.notes = body.notes.trim();
   }
   if (body.preferences !== undefined) {
     const prefs = parsePreferencesInput(body.preferences);

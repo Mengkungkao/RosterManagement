@@ -1,66 +1,60 @@
+import type { Metadata } from "next";
 import { requireAdmin } from "@/lib/admin-auth";
-import { type AppData, loadAll } from "@/lib/config-sheet";
+import type { AppData } from "@/lib/config-sheet";
+import { getData } from "@/lib/data";
 import { fortnightStartFor } from "@/lib/dates";
+import { pickFortnight } from "@/lib/fortnight-param";
 import { nearbyEvents } from "@/lib/overview";
-import AdminFrame, { errorMessage } from "../AdminFrame";
-import FortnightNav from "../FortnightNav";
-import RosterBoard from "../RosterBoard";
-import { pickFortnight } from "../fortnight";
+import RosterWorkspace from "@/components/roster/RosterWorkspace";
+import { LoadError, errorMessage } from "@/components/shell/PageHeader";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "Roster" };
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
 export default async function RosterPage({ searchParams }: { searchParams: SearchParams }) {
   await requireAdmin();
-
-  let data: AppData | null = null;
-  let loadError: string | null = null;
+  let data: AppData;
   try {
-    data = await loadAll();
+    data = await getData();
   } catch (err) {
-    loadError = errorMessage(err);
+    return <LoadError message={errorMessage(err)} />;
   }
   const params = await searchParams;
-  const description =
-    "The roster by pay fortnight. Open an event to staff its tasks, or Generate a draft that fills open positions safely for you to review.";
-  if (!data) {
-    return <AdminFrame title="Roster" description={description} loadError={loadError}>{null}</AdminFrame>;
-  }
+  const param = (key: string) => (typeof params[key] === "string" ? (params[key] as string) : undefined);
 
   // An ?event= link opens on that event's fortnight.
-  const linked = typeof params.event === "string" ? data.events.find((e) => e.id === params.event) : undefined;
-  const { today, currentFortnight, fortnightStart } = pickFortnight(
-    typeof params.fortnight === "string" ? params.fortnight : linked?.date,
-    data.settings.fortnightStart
-  );
+  const linked = param("event") ? data.events.find((e) => e.id === param("event")) : undefined;
+  const { today, currentFortnight, fortnightStart } = pickFortnight(param("fortnight") ?? linked?.date, data.settings.fortnightStart);
   const upcoming = data.events.find((e) => e.date >= today);
-  const nextEvent = upcoming
-    ? {
-        date: upcoming.date,
-        name: upcoming.name,
-        href: `/admin/roster?fortnight=${fortnightStartFor(upcoming.date, data.settings.fortnightStart)}`,
-      }
-    : null;
+  const view = param("view");
 
   return (
-    <AdminFrame title="Roster" description={description}>
-      <RosterBoard
-        key={fortnightStart}
-        events={nearbyEvents(data.events, fortnightStart)}
-        staff={data.staff}
-        settings={data.settings}
-        skills={data.skills}
-        taskTypes={data.taskTypes}
-        templates={data.templates}
-        fortnightStart={fortnightStart}
-        today={today}
-        nextEvent={nextEvent}
-        initialEventId={linked ? linked.id : null}
-        initialView={params.view === "timeline" ? "timeline" : "events"}
-        autoGenerate={params.generate === "1"}
-        nav={<FortnightNav basePath="/admin/roster" fortnightStart={fortnightStart} currentFortnight={currentFortnight} />}
-      />
-    </AdminFrame>
+    <RosterWorkspace
+      key={fortnightStart}
+      events={nearbyEvents(data.events, fortnightStart)}
+      staff={data.staff}
+      settings={data.settings}
+      skills={data.skills}
+      taskTypes={data.taskTypes}
+      templates={data.templates}
+      fortnightStart={fortnightStart}
+      currentFortnight={currentFortnight}
+      today={today}
+      nextEvent={
+        upcoming
+          ? {
+              date: upcoming.date,
+              name: upcoming.name,
+              href: `/admin/roster?fortnight=${fortnightStartFor(upcoming.date, data.settings.fortnightStart)}`,
+            }
+          : null
+      }
+      initialEventId={linked ? linked.id : null}
+      initialTaskId={linked ? (param("task") ?? null) : null}
+      initialView={view === "timeline" || view === "staff" ? view : "events"}
+      autoGenerate={param("generate") === "1"}
+    />
   );
 }

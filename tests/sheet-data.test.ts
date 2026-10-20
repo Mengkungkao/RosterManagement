@@ -174,8 +174,10 @@ describe("new profile columns", () => {
       skills: { barista: { level: "trained", verifiedOn: "2026-10-01", verifiedBy: "Meng", expiresOn: "" } },
       restrictions: [{ type: "no_heavy", note: "", until: "2026-12-01" }],
       preferences: ["evenings", "weekends"],
+      notes: "Keen to learn barista",
     });
     const ben = (await readAllStaff())[1];
+    expect(ben.notes).toBe("Keen to learn barista");
     expect(ben).toMatchObject({
       employeeId: "E7",
       active: false,
@@ -191,6 +193,7 @@ describe("new profile columns", () => {
       '[{"type":"no_heavy","note":"","until":"2026-12-01"}]',
       "Evenings, Weekends",
     ]);
+    expect(row[21]).toBe("Keen to learn barista");
   });
 
   it("secures plain-text passwords from older rows without changing them", async () => {
