@@ -12,7 +12,8 @@ import {
 } from "@/lib/award";
 import { formatWeekdayDate, isValidDate } from "@/lib/dates";
 import type { PaySettings } from "@/lib/settings";
-import { card, input, label, messageClass, mutedText, primaryButton, secondaryButton } from "../../ui";
+import { input, label, messageClass, mutedText, primaryButton, secondaryButton } from "../../ui";
+import { send } from "../api";
 
 type Message = { type: "success" | "error"; text: string } | null;
 
@@ -55,27 +56,28 @@ export default function PaySettingsForm({ settings }: { settings: PaySettings })
     e.preventDefault();
     setSaving(true);
     setMessage(null);
-    try {
-      const res = await fetch("/api/admin/settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fortnightStart, publicHolidays, awardRates: rates, eveningLoading, nightLoading }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Couldn't save");
-      setMessage({ type: "success", text: "Pay settings saved." });
-      startRefresh(() => router.refresh());
-    } catch (err) {
-      setMessage({ type: "error", text: err instanceof Error ? err.message : "Couldn't save" });
-    } finally {
-      setSaving(false);
+    const result = await send("/api/admin/settings", "PUT", {
+      fortnightStart,
+      publicHolidays,
+      awardRates: rates,
+      eveningLoading,
+      nightLoading,
+    });
+    setSaving(false);
+    if (!result.ok) {
+      setMessage({ type: "error", text: result.error });
+      return;
     }
+    setMessage({ type: "success", text: "Pay settings saved." });
+    startRefresh(() => router.refresh());
   }
 
   return (
-    <form onSubmit={save} className={`mt-8 p-5 ${card}`}>
-      <h2 className="font-medium text-zinc-900 dark:text-zinc-50">Pay settings</h2>
-      <p className={`mt-1 text-sm ${mutedText}`}>Saved in the Settings tab of the Google Sheet.</p>
+    <form onSubmit={save}>
+      <p className={`text-sm ${mutedText}`}>
+        Used for the wage estimates. Saved in the Settings tab of the Google Sheet. Estimates only — not a payroll
+        result; check anything unusual with the Fair Work pay calculator.
+      </p>
 
       <div className="mt-4 flex flex-wrap gap-6">
         <label>

@@ -10,6 +10,9 @@ export type Cell = string | number;
 export interface TableStore {
   // Every row of the tab, header included, as strings. A missing tab reads as [].
   read(tab: string): Promise<string[][]>;
+  // Several tabs in one request (Google Sheets allows few requests a minute).
+  // A missing tab reads as null, so callers can tell "not created yet" from empty.
+  readMany(tabs: string[]): Promise<(string[][] | null)[]>;
   // Replaces the whole tab in a single write. Rows the old content had beyond
   // the new content are blanked in that same write — nothing is cleared first,
   // so a failed write leaves the old data in place.
@@ -52,6 +55,32 @@ class GoogleSheetsStore implements TableStore {
     } catch (err) {
       if (isMissingTab(err)) return [];
       throw err;
+    }
+  }
+
+  async readMany(tabs: string[]): Promise<(string[][] | null)[]> {
+    const sheets = await getSheetsClient();
+    try {
+      const res = await sheets.spreadsheets.values.batchGet({
+        spreadsheetId: getSheetId(),
+        ranges: tabs.map((tab) => a1(tab)),
+      });
+      const ranges = res.data.valueRanges ?? [];
+      return tabs.map((_, i) => (ranges[i]?.values ?? []).map((row) => row.map((cell) => String(cell ?? ""))));
+    } catch (err) {
+      // One missing tab fails the whole batch: read them one by one instead.
+      if (!isMissingTab(err)) throw err;
+      return Promise.all(
+        tabs.map(async (tab) => {
+          try {
+            const res = await sheets.spreadsheets.values.get({ spreadsheetId: getSheetId(), range: a1(tab) });
+            return (res.data.values ?? []).map((row) => row.map((cell) => String(cell ?? "")));
+          } catch (e) {
+            if (isMissingTab(e)) return null;
+            throw e;
+          }
+        })
+      );
     }
   }
 
@@ -143,6 +172,13 @@ export class MemoryStore implements TableStore {
     return rows;
   }
 
+  async readMany(tabs: string[]): Promise<(string[][] | null)[]> {
+    await this.load();
+    const present = tabs.map((tab) => tab in this.tabs);
+    const rows = await Promise.all(tabs.map((tab) => this.read(tab)));
+    return rows.map((r, i) => (present[i] ? r : null));
+  }
+
   async writeAll(tab: string, rows: Cell[][]): Promise<void> {
     await this.load();
     this.tabs[tab] = coverOldContent(this.tabs[tab] ?? [], rows).map((r) => r.map(String));
@@ -179,7 +215,9 @@ export function getStore(): TableStore {
   return googleStore;
 }
 
-export function tabName(kind: "staff" | "events" | "roster" | "settings"): string {
+export type TabKind = "staff" | "events" | "roster" | "settings" | "taskTypes" | "skills" | "templates";
+
+export function tabName(kind: TabKind): string {
   switch (kind) {
     case "staff":
       return process.env.GOOGLE_SHEET_TAB || "Availability";
@@ -189,5 +227,28 @@ export function tabName(kind: "staff" | "events" | "roster" | "settings"): strin
       return process.env.GOOGLE_ROSTER_SHEET_TAB || "Roster";
     case "settings":
       return process.env.GOOGLE_SETTINGS_SHEET_TAB || "Settings";
+    case "taskTypes":
+      return process.env.GOOGLE_TASK_TYPES_SHEET_TAB || "Task Types";
+    case "skills":
+      return process.env.GOOGLE_SKILLS_SHEET_TAB || "Skills";
+    case "templates":
+      return process.env.GOOGLE_TEMPLATES_SHEET_TAB || "Templates";
   }
+}
+
+// Runs `fn` after every earlier `withLock` call for the same key has finished,
+// so a read → change → write of one tab never interleaves with another in this
+// server process. (It can't stop a second server or someone typing in the
+// sheet; the events' revision numbers catch those.)
+const locks = new Map<string, Promise<unknown>>();
+
+export function withLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const previous = locks.get(key) ?? Promise.resolve();
+  const run = previous.catch(() => undefined).then(fn);
+  const settled = run.catch(() => undefined);
+  locks.set(key, settled);
+  settled.then(() => {
+    if (locks.get(key) === settled) locks.delete(key);
+  });
+  return run;
 }

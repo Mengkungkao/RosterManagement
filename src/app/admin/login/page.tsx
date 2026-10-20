@@ -42,7 +42,7 @@ export default function AdminLoginPage() {
           Admin sign in
         </h1>
         <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-          Enter the admin password to view staff availability.
+          Enter the admin password to manage events, staff and the roster.
         </p>
         <input
           type="password"

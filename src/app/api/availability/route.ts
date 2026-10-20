@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DAYS, DAY_STATUSES, TIME_PATTERN, type WeekAvailability, emptyWeek } from "@/lib/availability";
 import { badRequest, readJson, serverError } from "@/lib/http";
+import { clearFailures, lockedOutMinutes, recordFailure, tooManyAttemptsMessage } from "@/lib/rate-limit";
 import { MAX_NAME_LENGTH, readStaff, saveStaffAvailability } from "@/lib/staff";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +20,7 @@ export async function GET(req: NextRequest) {
       week: hasPassword ? emptyWeek() : (existing?.week ?? emptyWeek()),
     });
   } catch (err) {
-    return serverError("load availability", err);
+    return serverError("load your availability", err);
   }
 }
 
@@ -59,14 +60,23 @@ export async function POST(req: NextRequest) {
   if (name.trim().length > MAX_NAME_LENGTH) return badRequest("Name is too long");
   if (typeof password !== "string" || password.length === 0) return badRequest("Password is required");
 
+  if (/[·\n\r]/.test(name)) return badRequest("Names can't contain line breaks or “·”");
+
   const week = validateWeek(weekInput);
   if (!week) return badRequest("Availability data is invalid — check that each day's From and To times differ");
 
+  const key = `staff:${name.trim().toLowerCase()}`;
+  const wait = lockedOutMinutes(key);
+  if (wait > 0) return badRequest(tooManyAttemptsMessage(wait), 429);
   try {
     const result = await saveStaffAvailability(name, week, password);
-    if (!result.ok) return badRequest(result.error ?? "Incorrect password", 403);
+    if (!result.ok) {
+      if (result.error === "Incorrect password") recordFailure(key);
+      return badRequest(result.error ?? "Incorrect password", 403);
+    }
+    clearFailures(key);
     return NextResponse.json({ ok: true });
   } catch (err) {
-    return serverError("save availability", err);
+    return serverError("save your availability", err);
   }
 }

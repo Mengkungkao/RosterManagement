@@ -12,9 +12,21 @@ type AccessState = "idle" | "checking" | "new" | "existing" | "unlocked";
 
 const NAME_KEY = "roster-staff-name";
 
+// A staff member's own request, as the server shows it to them.
+export interface OwnRequest {
+  id: string;
+  kind: "time_off" | "change";
+  from: string;
+  to: string;
+  eventName: string;
+  note: string;
+  status: "pending" | "approved" | "declined" | "resolved";
+}
+
 export interface StaffAccessProps {
   name: string;
   password: string;
+  initialRequests: OwnRequest[];
   // Availability loaded for this name while unlocking, if any — callers that
   // don't care (e.g. Today's Events) can just ignore it.
   initialWeek: WeekAvailability;
@@ -35,6 +47,7 @@ export default function StaffAccessGate({
   const [password, setPassword] = useState("");
   const [accessError, setAccessError] = useState<string | null>(null);
   const [initialWeek, setInitialWeek] = useState<WeekAvailability>(emptyWeek());
+  const [initialRequests, setInitialRequests] = useState<OwnRequest[]>([]);
 
   // Remembers the last name used on this device, so staff only type it once.
   useEffect(() => {
@@ -52,6 +65,7 @@ export default function StaffAccessGate({
     setPassword("");
     setAccessError(null);
     setInitialWeek(emptyWeek());
+    setInitialRequests([]);
   }
 
   function lock(message?: string) {
@@ -117,6 +131,7 @@ export default function StaffAccessGate({
         return;
       }
       setInitialWeek(data.week);
+      setInitialRequests(data.requests ?? []);
       setAccess("unlocked");
     } catch {
       setAccess("existing");
@@ -125,7 +140,7 @@ export default function StaffAccessGate({
   }
 
   if (access === "unlocked") {
-    return <>{children({ name: name.trim(), password, initialWeek, reset, lock })}</>;
+    return <>{children({ name: name.trim(), password, initialWeek, initialRequests, reset, lock })}</>;
   }
 
   return (

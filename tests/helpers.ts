@@ -2,6 +2,8 @@ import { DAYS, type DayAvailability, type WeekAvailability } from "@/lib/availab
 import type { EmploymentType } from "@/lib/employment";
 import type { EventRecord } from "@/lib/events";
 import type { RosterStaff } from "@/lib/roster";
+import type { SkillLevel, StaffSkill } from "@/lib/skills";
+import type { EventTask } from "@/lib/tasks";
 
 export const ALL_DAY: DayAvailability = { status: "available_all_day", startTime: "", endTime: "" };
 export const OFF: DayAvailability = { status: "unavailable", startTime: "", endTime: "" };
@@ -38,6 +40,9 @@ export function event(fields: Partial<EventRecord> = {}): EventRecord {
     setupHours: 1,
     packDownHours: 1,
     shareStaff: false,
+    tasks: [],
+    status: "published",
+    rev: 0,
     staff: [],
     ...fields,
   };
@@ -45,3 +50,32 @@ export function event(fields: Partial<EventRecord> = {}): EventRecord {
 
 export const ANCHOR = "2026-01-05"; // a Monday; the fortnight around the test dates starts 2026-10-12
 export const FORTNIGHT = "2026-10-12";
+
+export function task(fields: Partial<EventTask> & { id: string; name: string }): EventTask {
+  return {
+    typeId: "",
+    count: 1,
+    startTime: "17:00",
+    endTime: "22:00",
+    notes: "",
+    mandatory: true,
+    controlsConfirmed: false,
+    skillId: "",
+    minLevel: "",
+    qualificationIds: [],
+    demand: "low",
+    minTeam: 1,
+    controls: "",
+    needsSupervisor: false,
+    leadership: false,
+    combinable: false,
+    ...fields,
+  };
+}
+
+export const skill = (level: SkillLevel, expiresOn = ""): StaffSkill => ({
+  level,
+  verifiedOn: "2026-09-01",
+  verifiedBy: "Manager",
+  expiresOn,
+});

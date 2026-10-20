@@ -4,23 +4,25 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const TABS = [
-  { href: "/admin", label: "Roster" },
-  { href: "/admin/events", label: "Events" },
-  { href: "/admin/staff", label: "Staff" },
-  { href: "/admin/wages", label: "Wages" },
+  { href: "/admin", label: "Dashboard", match: (p: string) => p === "/admin" },
+  { href: "/admin/roster", label: "Roster", match: (p: string) => p.startsWith("/admin/roster") || p.startsWith("/admin/wages") },
+  { href: "/admin/events", label: "Events", match: (p: string) => p.startsWith("/admin/events") },
+  { href: "/admin/staff", label: "Staff", match: (p: string) => p.startsWith("/admin/staff") },
+  { href: "/admin/settings", label: "Settings", match: (p: string) => p.startsWith("/admin/settings") },
 ];
 
 export default function AdminNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="mt-4 flex gap-1 overflow-x-auto border-b border-zinc-200 dark:border-zinc-800">
+    <nav aria-label="Admin" className="mt-4 flex gap-1 overflow-x-auto border-b border-zinc-200 dark:border-zinc-800">
       {TABS.map((tab) => {
-        const active = pathname === tab.href;
+        const active = tab.match(pathname);
         return (
           <Link
             key={tab.href}
             href={tab.href}
+            aria-current={active ? "page" : undefined}
             className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors ${
               active
                 ? "border-zinc-900 text-zinc-900 dark:border-zinc-100 dark:text-zinc-50"

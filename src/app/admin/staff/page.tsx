@@ -1,37 +1,49 @@
 import { requireAdmin } from "@/lib/admin-auth";
-import { DEFAULT_SETTINGS, type PaySettings } from "@/lib/settings";
-import { readSettings } from "@/lib/settings-sheet";
-import { type StaffMember, readAllStaff } from "@/lib/staff";
+import { type AppData, loadAll } from "@/lib/config-sheet";
+import { melbourneToday } from "@/lib/dates";
 import AdminFrame, { errorMessage } from "../AdminFrame";
 import AvailabilityHeatmap from "../AvailabilityHeatmap";
 import StaffManager from "./StaffManager";
 
 export const dynamic = "force-dynamic";
 
-export default async function AdminStaffPage() {
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+
+export default async function AdminStaffPage({ searchParams }: { searchParams: SearchParams }) {
   await requireAdmin();
 
-  let staff: StaffMember[] = [];
-  let settings: PaySettings = DEFAULT_SETTINGS;
+  let data: AppData | null = null;
   let loadError: string | null = null;
   try {
-    [staff, settings] = await Promise.all([readAllStaff(), readSettings()]);
+    data = await loadAll();
   } catch (err) {
     loadError = errorMessage(err);
   }
+  const params = await searchParams;
+  const active = data?.staff.filter((s) => s.active) ?? [];
 
   return (
     <AdminFrame
       title="Staff"
-      description={`${staff.length} staff. Set each person's type (the hours they can be rostered) and award level (their pay).`}
+      description={`${active.length} active staff. Open a profile to record skills and qualifications, restrictions and shift preferences.`}
       loadError={loadError}
     >
-      <StaffManager staff={staff} rates={settings.awardRates} />
-      {staff.length > 0 && (
-        <section className="mt-8">
-          <h2 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Who&apos;s free when</h2>
-          <AvailabilityHeatmap staff={staff} />
-        </section>
+      {data && (
+        <>
+          <StaffManager
+            staff={data.staff}
+            skills={data.skills}
+            rates={data.settings.awardRates}
+            today={melbourneToday()}
+            initialPerson={typeof params.person === "string" ? params.person : null}
+          />
+          {active.length > 0 && (
+            <section className="mt-8">
+              <h2 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Who&apos;s free when</h2>
+              <AvailabilityHeatmap staff={active} />
+            </section>
+          )}
+        </>
       )}
     </AdminFrame>
   );

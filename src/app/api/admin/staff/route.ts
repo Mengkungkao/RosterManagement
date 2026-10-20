@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAdminRequest } from "@/lib/admin-auth";
 import { type AwardLevel, isAwardLevel } from "@/lib/award";
+import { loadConfig } from "@/lib/config-sheet";
 import { isEmploymentType } from "@/lib/employment";
 import { badRequest, readJson, serverError, unauthorized } from "@/lib/http";
+import { parsePreferencesInput, parseRestrictionsInput } from "@/lib/profile";
+import { parseSkillsInput } from "@/lib/skills";
 import { MAX_NAME_LENGTH, type StaffChanges, addStaff, updateStaff } from "@/lib/staff";
 
 export const dynamic = "force-dynamic";
@@ -21,6 +24,7 @@ export async function POST(req: NextRequest) {
   const name = typeof body.name === "string" ? body.name.trim() : "";
   if (!name) return badRequest("Name is required");
   if (name.length > MAX_NAME_LENGTH) return badRequest("Name is too long");
+  if (/[·\n\r]/.test(name)) return badRequest("Names can't contain line breaks or “·”");
   const type = body.employmentType ?? "casual";
   if (!isEmploymentType(type)) return badRequest("Unknown employment type");
   const level = parseLevel(body.awardLevel);
@@ -33,7 +37,8 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// Changes a staff member's type or award level, or resets their password.
+// Changes a staff member's profile: type, award level, employee ID, active,
+// skills, restrictions, preferences, a decision on a request, or a password reset.
 export async function PATCH(req: NextRequest) {
   if (!(await isAdminRequest())) return unauthorized();
   const body = ((await readJson(req)) ?? {}) as Record<string, unknown>;
@@ -47,9 +52,39 @@ export async function PATCH(req: NextRequest) {
   if (level === false) return badRequest("Unknown award level");
   if (level !== undefined) changes.awardLevel = level;
   if (body.resetPassword === true) changes.resetPassword = true;
+  if (body.employeeId !== undefined) {
+    if (typeof body.employeeId !== "string" || body.employeeId.trim().length > 40) return badRequest("Invalid employee ID");
+    changes.employeeId = body.employeeId.trim();
+  }
+  if (body.active !== undefined) {
+    if (typeof body.active !== "boolean") return badRequest("Invalid active setting");
+    changes.active = body.active;
+  }
+  if (body.preferences !== undefined) {
+    const prefs = parsePreferencesInput(body.preferences);
+    if (typeof prefs === "string") return badRequest(prefs);
+    changes.preferences = prefs;
+  }
+  if (body.restrictions !== undefined) {
+    const restrictions = parseRestrictionsInput(body.restrictions);
+    if (typeof restrictions === "string") return badRequest(restrictions);
+    changes.restrictions = restrictions;
+  }
+  if (body.requestDecision !== undefined) {
+    const { id, status } = (body.requestDecision ?? {}) as Record<string, unknown>;
+    if (typeof id !== "string" || !["approved", "declined", "resolved"].includes(status as string)) {
+      return badRequest("Invalid decision");
+    }
+    changes.requestDecision = { id, status: status as "approved" | "declined" | "resolved" };
+  }
   try {
+    if (body.skills !== undefined) {
+      const skills = parseSkillsInput(body.skills, (await loadConfig()).skills);
+      if (typeof skills === "string") return badRequest(skills);
+      changes.skills = skills;
+    }
     const result = await updateStaff(body.name, changes);
-    return result.ok ? NextResponse.json({ ok: true }) : badRequest(result.error!, 404);
+    return result.ok ? NextResponse.json({ ok: true }) : badRequest(result.error!, result.error === "Staff member not found" ? 404 : 409);
   } catch (err) {
     return serverError("update staff", err);
   }

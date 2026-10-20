@@ -2,326 +2,194 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { formatWeekdayDate } from "@/lib/dates";
-import type { EventAction, EventRecord } from "@/lib/events";
-import { minCoverage } from "@/lib/roster";
-import { card, input, label, linkButton, messageClass, mutedText, primaryButton, secondaryButton } from "../../ui";
-import StaffingPill from "../StaffingPill";
+import Link from "next/link";
+import { formatWeekdayDate, fortnightStartFor } from "@/lib/dates";
+import type { EventRecord } from "@/lib/events";
+import { eventTasks } from "@/lib/roster";
+import type { PaySettings } from "@/lib/settings";
+import type { SkillDef } from "@/lib/skills";
+import type { TaskType } from "@/lib/tasks";
+import type { EventTemplate } from "@/lib/templates";
+import { card, chip, linkButton, messageClass, mutedText, primaryButton, tones } from "../../ui";
+import { send } from "../api";
+import EventWizard from "./EventWizard";
 
-type Message = { type: "success" | "error"; text: string } | null;
+type Message = { type: "success" | "error"; text: string; href?: string } | null;
+type Editing = { mode: "new" } | { mode: "edit"; event: EventRecord } | { mode: "copy"; event: EventRecord } | null;
 
-const EMPTY_FORM = {
-  name: "",
-  date: "",
-  startTime: "",
-  endTime: "",
-  location: "",
-  notes: "",
-  actions: [] as EventAction[],
-  staffNeeded: 1,
-  setupHours: 1,
-  packDownHours: 1,
-  shareStaff: false,
-};
-
-type Form = typeof EMPTY_FORM;
-
-function NumberField({
-  title,
-  value,
-  step,
-  max,
-  onChange,
-}: {
-  title: string;
-  value: number;
-  step: number;
-  max: number;
-  onChange: (value: number) => void;
-}) {
-  return (
-    <label className="flex-1">
-      <span className={label}>{title}</span>
-      <input
-        type="number"
-        min={0}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className={`mt-1 w-full ${input}`}
-      />
-    </label>
-  );
+function setUrl(param: string | null, value?: string) {
+  const url = new URL(window.location.href);
+  url.searchParams.delete("new");
+  url.searchParams.delete("edit");
+  if (param && value) url.searchParams.set(param, value);
+  window.history.replaceState(null, "", url);
 }
 
-export default function EventsManager({ events, today }: { events: EventRecord[]; today: string }) {
+export default function EventsManager({
+  events,
+  today,
+  taskTypes,
+  skills,
+  templates,
+  settings,
+  openNew,
+  editId,
+}: {
+  events: EventRecord[];
+  today: string;
+  taskTypes: TaskType[];
+  skills: SkillDef[];
+  templates: EventTemplate[];
+  settings: PaySettings;
+  openNew: boolean;
+  editId: string | null;
+}) {
   const router = useRouter();
   const [refreshing, startRefresh] = useTransition();
-  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
   const [message, setMessage] = useState<Message>(null);
-  const [form, setForm] = useState<Form>(EMPTY_FORM);
-  const [editingId, setEditingId] = useState<string | null>(null);
   const [showPast, setShowPast] = useState(false);
+  const [editing, setEditing] = useState<Editing>(() => {
+    const event = editId ? events.find((e) => e.id === editId) : undefined;
+    return event ? { mode: "edit", event } : openNew ? { mode: "new" } : null;
+  });
 
   const past = events.filter((e) => e.date < today);
   const shown = showPast ? events : events.filter((e) => e.date >= today);
+  const rosterLink = (e: EventRecord) =>
+    `/admin/roster?fortnight=${fortnightStartFor(e.date, settings.fortnightStart)}&event=${encodeURIComponent(e.id)}`;
 
-  function update<K extends keyof Form>(key: K, value: Form[K]) {
-    setForm((f) => ({ ...f, [key]: value }));
-  }
-
-  function startEdit(event: EventRecord) {
-    const { id: _id, staff: _staff, ...details } = event;
-    setEditingId(event.id);
-    setForm(details);
+  function open(next: Editing) {
+    setEditing(next);
     setMessage(null);
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
-
-  function cancelEdit() {
-    setEditingId(null);
-    setForm(EMPTY_FORM);
-  }
-
-  async function send(url: string, method: string, body?: unknown): Promise<boolean> {
-    setSaving(true);
-    setMessage(null);
-    try {
-      const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: body === undefined ? undefined : JSON.stringify(body),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Couldn't save");
-      startRefresh(() => router.refresh());
-      return true;
-    } catch (err) {
-      setMessage({ type: "error", text: err instanceof Error ? err.message : "Couldn't save" });
-      return false;
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!form.name.trim() || !form.date || !form.startTime || !form.endTime) {
-      setMessage({ type: "error", text: "Name, date, start and end time are required." });
-      return;
-    }
-    const ok = await send(
-      editingId ? `/api/admin/events/${encodeURIComponent(editingId)}` : "/api/admin/events",
-      editingId ? "PUT" : "POST",
-      form
-    );
-    if (ok) {
-      setMessage({ type: "success", text: editingId ? "Event updated." : "Event added." });
-      cancelEdit();
-    }
+    if (next?.mode === "new") setUrl("new", "1");
+    else if (next?.mode === "edit") setUrl("edit", next.event.id);
+    else setUrl(null);
   }
 
   async function handleDelete(event: EventRecord) {
-    const rostered = event.staff.length > 0 ? ` ${event.staff.length} rostered staff will be taken off it.` : "";
-    if (!window.confirm(`Delete "${event.name}" on ${formatWeekdayDate(event.date)}?${rostered}`)) return;
-    if (await send(`/api/admin/events/${encodeURIComponent(event.id)}`, "DELETE")) {
-      if (editingId === event.id) cancelEdit();
-      setMessage({ type: "success", text: "Event deleted." });
+    const rostered = event.staff.length > 0 ? ` ${event.staff.length} rostered shift${event.staff.length === 1 ? "" : "s"} will be removed with it.` : "";
+    if (!window.confirm(`Delete “${event.name}” on ${formatWeekdayDate(event.date)}? This can't be undone.${rostered}`)) return;
+    setDeleting(event.id);
+    const result = await send(`/api/admin/events/${encodeURIComponent(event.id)}`, "DELETE");
+    setDeleting(null);
+    if (!result.ok) setMessage({ type: "error", text: result.error });
+    else {
+      setMessage({ type: "success", text: `Deleted “${event.name}”.` });
+      startRefresh(() => router.refresh());
     }
   }
 
   return (
-    <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,380px)_1fr]">
-      <form onSubmit={handleSubmit} className={`h-fit p-6 ${card}`}>
-        <h2 className="font-medium text-zinc-900 dark:text-zinc-50">{editingId ? "Edit event" : "Add event"}</h2>
-
-        <div className="mt-4 space-y-3">
-          <label className="block">
-            <span className={label}>Event name</span>
-            <input value={form.name} onChange={(e) => update("name", e.target.value)} className={`mt-1 w-full ${input}`} />
-          </label>
-          <label className="block">
-            <span className={label}>Date</span>
-            <input type="date" value={form.date} onChange={(e) => update("date", e.target.value)} className={`mt-1 w-full ${input}`} />
-          </label>
-          <div className="flex gap-2">
-            <label className="flex-1">
-              <span className={label}>Starts</span>
-              <input type="time" value={form.startTime} onChange={(e) => update("startTime", e.target.value)} className={`mt-1 w-full ${input}`} />
-            </label>
-            <label className="flex-1">
-              <span className={label}>Ends</span>
-              <input type="time" value={form.endTime} onChange={(e) => update("endTime", e.target.value)} className={`mt-1 w-full ${input}`} />
-            </label>
-          </div>
-          <div className="flex gap-2">
-            <NumberField title="Staff needed" value={form.staffNeeded} step={1} max={100} onChange={(v) => update("staffNeeded", v)} />
-            <NumberField title="Setup (h)" value={form.setupHours} step={0.25} max={12} onChange={(v) => update("setupHours", v)} />
-            <NumberField title="Pack-down (h)" value={form.packDownHours} step={0.25} max={12} onChange={(v) => update("packDownHours", v)} />
-          </div>
-          <p className={`text-xs ${mutedText}`}>
-            Staff work from setup to pack-down: an event 18:00–22:00 with 1h each way is a 17:00–23:00 shift.
-            Shifts over 6h include an unpaid 30-minute break; a shift longer than 12h of work is split into early
-            and late shifts.
-          </p>
-          <label className="flex items-start gap-2 text-sm text-zinc-700 dark:text-zinc-300">
-            <input
-              type="checkbox"
-              checked={form.shareStaff}
-              onChange={(e) => update("shareStaff", e.target.checked)}
-              className="mt-0.5 h-4 w-4"
-            />
-            <span>
-              Staff can also work other functions at the same time
-              <span className={`block text-xs ${mutedText}`}>
-                e.g. a Studio 1 function covered by the Great Room team. Their time is only counted once.
-              </span>
-            </span>
-          </label>
-          <label className="block">
-            <span className={label}>Location</span>
-            <input value={form.location} onChange={(e) => update("location", e.target.value)} className={`mt-1 w-full ${input}`} />
-          </label>
-          <label className="block">
-            <span className={label}>Notes (optional)</span>
-            <textarea value={form.notes} onChange={(e) => update("notes", e.target.value)} rows={2} className={`mt-1 w-full ${input}`} />
-          </label>
-
-          <div>
-            <div className="flex items-center justify-between">
-              <span className={label}>Run of show (optional)</span>
-              <button type="button" onClick={() => update("actions", [...form.actions, { label: "", time: "" }])} className={linkButton}>
-                + Add step
-              </button>
-            </div>
-            {form.actions.length > 0 && (
-              <div className="mt-2 space-y-2">
-                {form.actions.map((action, index) => (
-                  <div key={index} className="flex gap-2">
-                    <input
-                      type="time"
-                      value={action.time}
-                      onChange={(e) =>
-                        update("actions", form.actions.map((a, i) => (i === index ? { ...a, time: e.target.value } : a)))
-                      }
-                      className={`w-28 ${input}`}
-                    />
-                    <input
-                      placeholder="e.g. Entree serve"
-                      value={action.label}
-                      onChange={(e) =>
-                        update("actions", form.actions.map((a, i) => (i === index ? { ...a, label: e.target.value } : a)))
-                      }
-                      className={`min-w-0 flex-1 ${input}`}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => update("actions", form.actions.filter((_, i) => i !== index))}
-                      className="px-2 text-zinc-400 hover:text-red-600 dark:hover:text-red-400"
-                      aria-label="Remove step"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {message && <p className={`mt-3 text-sm ${messageClass(message.type)}`}>{message.text}</p>}
-
-        <div className="mt-4 flex gap-2">
-          <button type="submit" disabled={saving} className={`flex-1 ${primaryButton}`}>
-            {saving ? "Saving…" : editingId ? "Save changes" : "Add event"}
+    <>
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+        <button type="button" onClick={() => open({ mode: "new" })} className={primaryButton}>
+          + Create event
+        </button>
+        {past.length > 0 && (
+          <button type="button" onClick={() => setShowPast(!showPast)} className={linkButton}>
+            {showPast ? "Hide past events" : `Show past events (${past.length})`}
           </button>
-          {editingId && (
-            <button type="button" onClick={cancelEdit} className={secondaryButton}>
-              Cancel
-            </button>
+        )}
+      </div>
+      {message && (
+        <p className={`mt-3 text-sm ${messageClass(message.type)}`} role="status">
+          {message.text}{" "}
+          {message.href && (
+            <Link href={message.href} className="underline">
+              Staff it on the Roster →
+            </Link>
           )}
-        </div>
-      </form>
+        </p>
+      )}
 
-      <div className={`overflow-x-auto ${card}`}>
+      <div className={`mt-4 ${card}`}>
         <div className="flex items-center justify-between gap-3 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
           <h2 className="font-medium text-zinc-900 dark:text-zinc-50">
             {showPast ? "All events" : "Upcoming events"}
             {refreshing && <span className={`ml-2 text-sm font-normal ${mutedText}`}>updating…</span>}
           </h2>
-          {past.length > 0 && (
-            <button type="button" onClick={() => setShowPast(!showPast)} className={linkButton}>
-              {showPast ? "Hide past events" : `Show past events (${past.length})`}
-            </button>
-          )}
         </div>
         {shown.length === 0 ? (
-          <p className={`p-6 text-sm ${mutedText}`}>No upcoming events — add one with the form.</p>
+          <p className={`p-6 text-sm ${mutedText}`}>No upcoming events — create one to get started.</p>
         ) : (
-          <table className="w-full min-w-[640px] text-sm">
-            <thead>
-              <tr className={`border-b border-zinc-200 text-left dark:border-zinc-800 ${mutedText}`}>
-                <th className="px-4 py-2.5 font-medium">Event</th>
-                <th className="px-4 py-2.5 font-medium">When</th>
-                <th className="px-4 py-2.5 font-medium">Staff</th>
-                <th className="px-4 py-2.5 font-medium" />
-              </tr>
-            </thead>
-            <tbody>
-              {shown.map((event) => (
-                <tr
-                  key={event.id}
-                  className={`border-b border-zinc-100 last:border-0 dark:border-zinc-900 ${
-                    event.date < today ? "opacity-60" : ""
-                  } ${editingId === event.id ? "bg-zinc-50 dark:bg-zinc-900" : ""}`}
-                >
-                  <td className="px-4 py-3 align-top">
-                    <div className="font-medium text-zinc-800 dark:text-zinc-200">{event.name}</div>
-                    {event.location && <div className={`text-xs ${mutedText}`}>{event.location}</div>}
-                    {event.actions.length > 0 && (
-                      <ul className={`mt-1 space-y-0.5 text-xs ${mutedText}`}>
-                        {event.actions.map((action, i) => (
-                          <li key={i}>
-                            {action.time && <span className="tabular-nums">{action.time} </span>}
-                            {action.label}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 align-top whitespace-nowrap text-zinc-600 tabular-nums dark:text-zinc-400">
-                    {formatWeekdayDate(event.date)}
-                    <div>
-                      {event.startTime}–{event.endTime}
+          <ul className="divide-y divide-zinc-100 dark:divide-zinc-900">
+            {shown.map((event) => {
+              const tasks = eventTasks(event);
+              const positions = tasks.reduce((sum, t) => sum + t.count, 0);
+              return (
+                <li key={event.id} className={`flex flex-wrap items-start gap-x-4 gap-y-2 px-4 py-3 ${event.date < today ? "opacity-60" : ""}`}>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium text-zinc-900 dark:text-zinc-100">{event.name}</span>
+                      {event.status === "draft" ? (
+                        <span className={`${chip} ${tones.neutral}`}>Draft</span>
+                      ) : (
+                        <span className={`${chip} ${tones.good}`}>✓ Published</span>
+                      )}
+                      {event.shareStaff && <span className={`${chip} ${tones.neutral}`}>Shares staff</span>}
                     </div>
-                  </td>
-                  <td className="px-4 py-3 align-top">
-                    <StaffingPill filled={minCoverage(event)} needed={event.staffNeeded} />
-                    {event.shareStaff && <span className={`ml-1 text-xs ${mutedText}`}>shares staff</span>}
-                    {event.staff.length > 0 && (
-                      <div className={`mt-1 text-xs ${mutedText}`}>{event.staff.map((s) => s.name).join(", ")}</div>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-right align-top whitespace-nowrap">
-                    <button type="button" onClick={() => startEdit(event)} className={`mr-3 ${linkButton}`}>
+                    <div className={`text-sm tabular-nums ${mutedText}`}>
+                      {formatWeekdayDate(event.date)} · {event.startTime}–{event.endTime}
+                      {event.location && ` · ${event.location}`}
+                      {event.guests ? ` · ${event.guests} guests` : ""}
+                    </div>
+                    <div className={`mt-0.5 text-xs ${mutedText}`}>
+                      {event.tasks.length > 0
+                        ? `${tasks.length} task${tasks.length === 1 ? "" : "s"}: ${tasks.map((t) => `${t.name} ${t.count}`).join(", ")}`
+                        : `${positions} general staff`}
+                      {event.actions.length > 0 && ` · ${event.actions.length} run-of-show step${event.actions.length === 1 ? "" : "s"}`}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3 text-sm">
+                    <Link href={rosterLink(event)} className={linkButton}>
+                      Roster
+                    </Link>
+                    <button type="button" onClick={() => open({ mode: "edit", event })} className={linkButton}>
                       Edit
+                    </button>
+                    <button type="button" onClick={() => open({ mode: "copy", event })} className={linkButton}>
+                      Duplicate
                     </button>
                     <button
                       type="button"
                       onClick={() => handleDelete(event)}
-                      disabled={saving}
-                      className="text-sm text-red-600 hover:text-red-800 disabled:opacity-50 dark:text-red-400 dark:hover:text-red-300"
+                      disabled={deleting !== null}
+                      className="font-medium text-red-600 hover:text-red-800 disabled:opacity-50 dark:text-red-400 dark:hover:text-red-300"
                     >
-                      Delete
+                      {deleting === event.id ? "Deleting…" : "Delete"}
                     </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
         )}
       </div>
-    </div>
+
+      {editing && (
+        <EventWizard
+          key={editing.mode === "new" ? "new" : `${editing.mode}-${editing.event.id}`}
+          event={editing.mode === "edit" ? editing.event : null}
+          copyOf={editing.mode === "copy" ? editing.event : null}
+          taskTypes={taskTypes}
+          skills={skills}
+          templates={templates}
+          settings={settings}
+          onClose={() => open(null)}
+          onSaved={(event, created) => {
+            open(null);
+            setMessage({
+              type: "success",
+              text: created
+                ? `Saved “${event.name}”${event.status === "draft" ? " as a draft" : " and published it"}.`
+                : `Saved changes to “${event.name}”.`,
+              href: rosterLink(event),
+            });
+            startRefresh(() => router.refresh());
+          }}
+        />
+      )}
+    </>
   );
 }

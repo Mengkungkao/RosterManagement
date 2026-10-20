@@ -52,6 +52,7 @@ export interface WageLine {
   items: PayItem[];
   days: DayPay[];
   pay: number | null; // null when no award level is set
+  byEvent: Record<string, { hours: number; pay: number }>; // this person's time and pay per event
 }
 
 export interface WageSummary {
@@ -59,6 +60,9 @@ export interface WageSummary {
   totalHours: number;
   totalPay: number; // of everyone with an award level
   missingLevels: string[]; // rostered staff with no award level
+  // Each event's share of the hours and pay. Someone on two functions at once
+  // has that time split between them, so the events add up to the total.
+  byEvent: Record<string, { hours: number; pay: number; missingLevels: string[] }>;
 }
 
 const cents = (value: number) => Math.round(value * 100) / 100;
@@ -92,6 +96,25 @@ function payFor(
   shifts: Shift[],
   settings: PaySettings
 ): Omit<WageLine, "staffName" | "employmentType" | "awardLevel"> {
+  // Which events a minute of work belongs to (split evenly when on several at once).
+  const byEvent = new Map<string, { minutes: number; amount: number }>();
+  const eventsAt = (minute: number) => [
+    ...new Set(shifts.filter((s) => s.absStart <= minute && minute < s.absEnd).map((s) => s.eventId)),
+  ];
+  const credit = (ids: string[], minutes: number, amount: number) => {
+    if (ids.length === 0) return;
+    for (const id of ids) {
+      const entry = byEvent.get(id) ?? { minutes: 0, amount: 0 };
+      entry.minutes += minutes / ids.length;
+      entry.amount += amount / ids.length;
+      byEvent.set(id, entry);
+    }
+  };
+  // Spreads an amount over events in proportion to the minutes they had in `share`.
+  const spread = (share: Map<string, number>, amount: number) => {
+    const total = [...share.values()].reduce((a, b) => a + b, 0);
+    for (const [id, minutes] of share) credit([id], 0, total > 0 ? (amount * minutes) / total : 0);
+  };
   const casual = isPaidAsCasual(person.employmentType);
   const kindOfPay = casual ? "casual" : "permanent";
   const base = person.awardLevel ? settings.awardRates[person.awardLevel] : null;
@@ -103,7 +126,10 @@ function payFor(
     bucket.minutes += minutes;
     buckets.set(label, bucket);
   };
-  const loadingMinutes = new Map<string, { minutes: number; amount: number; label: string; date: string }>();
+  const loadingMinutes = new Map<
+    string,
+    { minutes: number; amount: number; label: string; date: string; events: Map<string, number> }
+  >();
   const dayAmounts = new Map<string, number>();
   const addDayAmount = (date: string, amount: number) => dayAmounts.set(date, (dayAmounts.get(date) ?? 0) + amount);
 
@@ -123,6 +149,7 @@ function payFor(
       let lastLabel = "";
       let blockWorked = 0;
       let touchesHoliday = false;
+      const blockEvents = new Map<string, number>();
 
       for (const [from, to] of workedIntervals(block)) {
         for (let minute = from; minute < to; minute++) {
@@ -164,14 +191,18 @@ function payFor(
               if (loading) {
                 // "per hour or part of an hour": counted per calendar day for each shift day.
                 const key = `${date}|${calendarDate}|${loading.label}`;
-                const entry = loadingMinutes.get(key) ?? { minutes: 0, ...loading, date };
+                const entry = loadingMinutes.get(key) ?? { minutes: 0, ...loading, date, events: new Map() };
                 entry.minutes++;
+                for (const id of eventsAt(minute)) entry.events.set(id, (entry.events.get(id) ?? 0) + 1);
                 loadingMinutes.set(key, entry);
               }
             }
           }
           add(label, rate, 1);
           addDayAmount(date, rate / 60);
+          const ids = eventsAt(minute);
+          credit(ids, 1, rate / 60);
+          for (const id of ids) blockEvents.set(id, (blockEvents.get(id) ?? 0) + 1 / ids.length);
           [lastRate, lastLabel] = [rate, label];
           dayWorked++;
           blockWorked++;
@@ -186,6 +217,7 @@ function payFor(
       if (blockWorked < minimum) {
         add(`Minimum paid hours (${lastLabel})`, lastRate, minimum - blockWorked);
         addDayAmount(date, ((minimum - blockWorked) * lastRate) / 60);
+        spread(blockEvents, ((minimum - blockWorked) * lastRate) / 60);
       }
     }
 
@@ -200,12 +232,13 @@ function payFor(
   }
 
   const loadings = new Map<string, { units: number; amount: number }>();
-  for (const { minutes, amount, label, date } of loadingMinutes.values()) {
+  for (const { minutes, amount, label, date, events } of loadingMinutes.values()) {
     const units = Math.ceil(minutes / 60);
     const total = loadings.get(label) ?? { units: 0, amount };
     total.units += units;
     loadings.set(label, total);
     addDayAmount(date, units * amount);
+    spread(events, units * amount);
   }
 
   const items: PayItem[] = [
@@ -230,6 +263,9 @@ function payFor(
     items: base === null ? [] : items,
     days: days.map((d) => ({ ...d, amount: base === null ? null : cents(dayAmounts.get(d.date) ?? 0) })),
     pay: base === null ? null : cents(items.reduce((sum, i) => sum + i.amount, 0)),
+    byEvent: Object.fromEntries(
+      [...byEvent].map(([id, { minutes, amount }]) => [id, { hours: minutes / 60, pay: base === null ? 0 : cents(amount) }])
+    ),
   };
 }
 
@@ -260,10 +296,47 @@ export function calculateWages(
     ),
   }));
 
+  const byEvent: WageSummary["byEvent"] = {};
+  for (const line of lines) {
+    for (const [id, share] of Object.entries(line.byEvent)) {
+      const entry = (byEvent[id] ??= { hours: 0, pay: 0, missingLevels: [] });
+      entry.hours += share.hours;
+      entry.pay = cents(entry.pay + share.pay);
+      if (line.pay === null) entry.missingLevels.push(line.staffName);
+    }
+  }
+
   return {
     lines,
     totalHours: lines.reduce((sum, l) => sum + l.workedHours, 0),
     totalPay: cents(lines.reduce((sum, l) => sum + (l.pay ?? 0), 0)),
     missingLevels: lines.filter((l) => l.pay === null && l.workedHours > 0).map((l) => l.staffName),
+    byEvent,
   };
+}
+
+// A rough cost for positions before anyone is chosen: each position paid as
+// a casual at `level` for the whole of its task (minimum award rates,
+// weekend/holiday rates and loadings included, no overtime interplay).
+export function estimatePositions(
+  positions: { key: string; date: string; absStart: number; absEnd: number; count: number }[],
+  settings: PaySettings,
+  level: AwardLevel = "level1"
+): { hours: number; pay: number } {
+  let hours = 0;
+  let pay = 0;
+  for (const p of positions) {
+    if (p.count <= 0) continue;
+    const shift = {
+      eventId: p.key,
+      date: p.date,
+      staffName: "estimate",
+      absStart: p.absStart,
+      absEnd: p.absEnd,
+    } as Shift;
+    const line = payFor({ staffName: "estimate", employmentType: "casual", awardLevel: level }, [shift], settings);
+    hours += line.workedHours * p.count;
+    pay += (line.pay ?? 0) * p.count;
+  }
+  return { hours, pay: cents(pay) };
 }

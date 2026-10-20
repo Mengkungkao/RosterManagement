@@ -1,8 +1,9 @@
+import Link from "next/link";
 import { requireAdmin } from "@/lib/admin-auth";
 import { AWARD_LEVELS, DEFAULT_AWARD_RATES, DEFAULT_RATES_FROM } from "@/lib/award";
 import { addDays } from "@/lib/dates";
 import { type EventRecord, listEvents } from "@/lib/events";
-import { listShifts } from "@/lib/roster";
+import { eventsInRange, listShifts } from "@/lib/roster";
 import { DEFAULT_SETTINGS, type PaySettings } from "@/lib/settings";
 import { readSettings } from "@/lib/settings-sheet";
 import { type StaffMember, readAllStaff } from "@/lib/staff";
@@ -10,7 +11,6 @@ import { calculateWages } from "@/lib/wages";
 import AdminFrame, { errorMessage } from "../AdminFrame";
 import FortnightNav from "../FortnightNav";
 import { pickFortnight } from "../fortnight";
-import PaySettingsForm from "./PaySettingsForm";
 import WagesTable from "./WagesTable";
 
 export const dynamic = "force-dynamic";
@@ -41,14 +41,27 @@ export default async function WagesPage({ searchParams }: { searchParams: Search
   return (
     <AdminFrame
       title="Wages"
-      description="Minimum award pay for the fortnight, from rostered hours and each person's award level."
+      description={
+        <>
+          Estimated minimum award pay for the fortnight, from rostered hours and each person&apos;s award level. Rates,
+          public holidays and the fortnight start are in{" "}
+          <Link href="/admin/settings#pay" className="underline">
+            Settings → Pay and award
+          </Link>
+          .
+        </>
+      }
       loadError={loadError}
     >
       <div className="mt-4">
         <FortnightNav basePath="/admin/wages" fortnightStart={fortnightStart} currentFortnight={currentFortnight} />
       </div>
-      <WagesTable summary={wages} fortnightStart={fortnightStart} ratesOutOfDate={ratesOutOfDate} />
-      <PaySettingsForm key={JSON.stringify(settings)} settings={settings} />
+      <WagesTable
+        summary={wages}
+        events={eventsInRange(events, fortnightStart, 14)}
+        fortnightStart={fortnightStart}
+        ratesOutOfDate={ratesOutOfDate}
+      />
     </AdminFrame>
   );
 }

@@ -4,6 +4,7 @@ import { Fragment, useState } from "react";
 import Link from "next/link";
 import { AWARD_LEVEL_NAMES, AWARD_NAME, PAY_CALCULATOR_URL, PAY_GUIDE_URL } from "@/lib/award";
 import { addDays, formatHours, formatWeekdayDate } from "@/lib/dates";
+import type { EventRecord } from "@/lib/events";
 import { EMPLOYMENT_LABELS } from "@/lib/employment";
 import type { WageLine, WageSummary } from "@/lib/wages";
 import { card, linkButton, mutedText, secondaryButton, warningText } from "../../ui";
@@ -86,10 +87,12 @@ function Breakdown({ line }: { line: WageLine }) {
 
 export default function WagesTable({
   summary,
+  events,
   fortnightStart,
   ratesOutOfDate,
 }: {
   summary: WageSummary;
+  events: EventRecord[];
   fortnightStart: string;
   ratesOutOfDate: boolean;
 }) {
@@ -114,7 +117,11 @@ export default function WagesTable({
       {ratesOutOfDate && (
         <p className={`mb-3 text-sm ${warningText}`}>
           This fortnight is after 30 June, when award rates usually go up. Check the latest pay guide and update the
-          rates under Pay settings below.
+          rates in{" "}
+          <Link href="/admin/settings#pay" className="underline">
+            Settings → Pay and award
+          </Link>
+          .
         </p>
       )}
       {summary.missingLevels.length > 0 && (
@@ -191,6 +198,42 @@ export default function WagesTable({
                 <td className="px-3 py-2.5 text-right">{money.format(summary.totalPay)}</td>
                 <td />
               </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+      {events.some((e) => summary.byEvent[e.id]) && (
+        <div className={`mt-6 overflow-x-auto ${card}`}>
+          <table className="w-full min-w-[480px] text-sm">
+            <caption className={`px-4 pt-3 text-left text-sm font-medium text-zinc-800 dark:text-zinc-200`}>
+              By event <span className={`font-normal ${mutedText}`}>· time on two functions at once is split between them</span>
+            </caption>
+            <thead>
+              <tr className={`border-b border-zinc-200 text-left dark:border-zinc-800 ${mutedText}`}>
+                <th className="px-4 py-2.5 font-medium">Event</th>
+                <th className="px-3 py-2.5 text-right font-medium">Hours</th>
+                <th className="px-3 py-2.5 text-right font-medium">Est. pay</th>
+                <th className="px-4 py-2.5 font-medium">Not included</th>
+              </tr>
+            </thead>
+            <tbody className="tabular-nums">
+              {events
+                .filter((e) => summary.byEvent[e.id])
+                .map((e) => {
+                  const share = summary.byEvent[e.id];
+                  return (
+                    <tr key={e.id} className="border-t border-zinc-100 dark:border-zinc-900">
+                      <td className="px-4 py-2">
+                        {e.name} <span className={mutedText}>· {formatWeekdayDate(e.date)}</span>
+                      </td>
+                      <td className="px-3 py-2 text-right">{formatHours(share.hours)}</td>
+                      <td className="px-3 py-2 text-right">{money.format(share.pay)}</td>
+                      <td className={`px-4 py-2 text-xs ${share.missingLevels.length ? warningText : mutedText}`}>
+                        {share.missingLevels.length ? `${share.missingLevels.join(", ")} (no award level)` : "–"}
+                      </td>
+                    </tr>
+                  );
+                })}
             </tbody>
           </table>
         </div>

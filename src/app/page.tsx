@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { DAYS, Day, DayStatus, WeekAvailability } from "@/lib/availability";
 import StaffAccessGate, { StaffAccessProps } from "./StaffAccessGate";
+import TimeOff from "./StaffRequests";
 
 type Message = { type: "success" | "error"; text: string } | null;
 
@@ -16,10 +17,12 @@ function AvailabilityForm({
   name,
   password,
   initialWeek,
+  initialRequests,
   reset,
   lock,
 }: StaffAccessProps) {
   const [week, setWeek] = useState<WeekAvailability>(initialWeek);
+  const [requests, setRequests] = useState(initialRequests);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<Message>(null);
 
@@ -64,10 +67,10 @@ function AvailabilityForm({
         throw new Error(data.error || "Failed to save");
       }
       setMessage({ type: "success", text: "Availability saved. Thank you!" });
-    } catch {
+    } catch (err) {
       setMessage({
         type: "error",
-        text: "Couldn't save your availability. Please try again.",
+        text: err instanceof Error && err.message ? err.message : "Couldn't save your availability. Please try again.",
       });
     } finally {
       setSaving(false);
@@ -163,6 +166,8 @@ function AvailabilityForm({
       >
         {saving ? "Saving…" : "Save availability"}
       </button>
+
+      <TimeOff name={name} password={password} requests={requests} onChange={setRequests} lock={lock} />
     </>
   );
 }

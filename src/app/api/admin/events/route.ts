@@ -14,6 +14,7 @@ export async function GET() {
   }
 }
 
+// New events are drafts (not shown to staff) unless sent as "published".
 export async function POST(req: NextRequest) {
   if (!(await isAdminRequest())) return unauthorized();
   const input = parseEventInput(await readJson(req));
@@ -21,6 +22,6 @@ export async function POST(req: NextRequest) {
   try {
     return NextResponse.json({ event: await createEvent(input) });
   } catch (err) {
-    return serverError("create event", err);
+    return serverError("create the event", err);
   }
 }

@@ -5,7 +5,8 @@ import type { EventRecord } from "@/lib/events";
 import { colorForEvent } from "@/lib/event-colors";
 import { formatHours, formatWeekdayDate, mod1440, toMinutes } from "@/lib/dates";
 import { getMelbourneMinutesNow, layoutDayEvents, type PositionedEvent } from "@/lib/roster-grid";
-import StaffAccessGate, { StaffAccessProps } from "../StaffAccessGate";
+import StaffAccessGate, { type OwnRequest, StaffAccessProps } from "../StaffAccessGate";
+import { StatusChip, sendRequest } from "../StaffRequests";
 
 const ROW_HEIGHT_PX = 64; // px per hour in the time grid
 // Fixed lane above the event's actual start row for its name, location, and
@@ -47,14 +48,121 @@ interface DayData {
   events: EventRecord[];
 }
 
+interface ShiftInfo {
+  eventId: string;
+  eventName: string;
+  location: string;
+  time: string;
+  taskName: string;
+  taskNotes: string;
+  eventTime: string;
+  eventNotes: string;
+  actions: { label: string; time: string }[];
+}
+
 interface WorkDay {
   date: string;
   hours: number;
   breaks: string[];
-  shifts: { eventId: string; eventName: string; location: string; time: string }[];
+  shifts: ShiftInfo[];
 }
 
-function MyShifts({ workDays, today }: { workDays: WorkDay[]; today: string | undefined }) {
+function ChangeRequest({
+  shift,
+  name,
+  password,
+  requests,
+  onChange,
+  lock,
+}: {
+  shift: ShiftInfo;
+  name: string;
+  password: string;
+  requests: OwnRequest[];
+  onChange: (r: OwnRequest[]) => void;
+  lock: (message?: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const existing = requests.filter((r) => r.kind === "change" && r.eventName === shift.eventName);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!note.trim()) return;
+    setBusy(true);
+    setError(null);
+    const result = await sendRequest("POST", { name, password, kind: "change", eventId: shift.eventId, note });
+    setBusy(false);
+    if (!result.ok) {
+      if (result.status === 401) lock(result.error);
+      else setError(result.error);
+      return;
+    }
+    onChange(result.requests);
+    setOpen(false);
+    setNote("");
+  }
+
+  return (
+    <div className="mt-1">
+      {existing.map((r) => (
+        <div key={r.id} className="mt-1 flex flex-wrap items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
+          <StatusChip status={r.status} /> You asked: “{r.note}”
+        </div>
+      ))}
+      {!open ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="mt-1 text-xs font-medium text-zinc-500 underline-offset-2 hover:text-zinc-900 hover:underline dark:text-zinc-400 dark:hover:text-zinc-50"
+        >
+          Can&apos;t make it, or something&apos;s wrong? Ask for a change
+        </button>
+      ) : (
+        <form onSubmit={submit} className="mt-2 space-y-2">
+          <textarea
+            autoFocus
+            rows={2}
+            value={note}
+            maxLength={500}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="e.g. I have an exam until 6pm — could I start at 18:30?"
+            className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-base text-zinc-900 outline-none focus:border-zinc-500 sm:text-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+          />
+          <div className="flex gap-2">
+            <button type="submit" disabled={busy || !note.trim()} className="rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900">
+              {busy ? "Sending…" : "Send to my manager"}
+            </button>
+            <button type="button" onClick={() => setOpen(false)} className="text-sm text-zinc-500 underline">
+              Cancel
+            </button>
+          </div>
+          {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
+        </form>
+      )}
+    </div>
+  );
+}
+
+function MyShifts({
+  workDays,
+  today,
+  name,
+  password,
+  requests,
+  onRequests,
+  lock,
+}: {
+  workDays: WorkDay[];
+  today: string | undefined;
+  name: string;
+  password: string;
+  requests: OwnRequest[];
+  onRequests: (r: OwnRequest[]) => void;
+  lock: (message?: string) => void;
+}) {
   return (
     <section className="mt-4">
       <h2 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
@@ -69,7 +177,7 @@ function MyShifts({ workDays, today }: { workDays: WorkDay[]; today: string | un
           {workDays.map((day) => (
             <li
               key={day.date}
-              className={`px-3 py-2.5 ${day.date === today ? "bg-emerald-50 dark:bg-emerald-950/40" : ""}`}
+              className={`px-3 py-3 ${day.date === today ? "bg-emerald-50 dark:bg-emerald-950/40" : ""}`}
             >
               <div className="flex items-baseline justify-between gap-3">
                 <span className="font-medium text-zinc-900 dark:text-zinc-50">
@@ -81,9 +189,35 @@ function MyShifts({ workDays, today }: { workDays: WorkDay[]; today: string | un
                 </span>
               </div>
               {day.shifts.map((shift) => (
-                <div key={shift.eventId} className="mt-0.5 text-sm text-zinc-700 dark:text-zinc-300">
-                  <span className="tabular-nums">{shift.time}</span> {shift.eventName}
-                  {shift.location && <span className="text-zinc-500 dark:text-zinc-400"> · {shift.location}</span>}
+                <div key={`${shift.eventId}-${shift.taskName}-${shift.time}`} className="mt-1.5 text-sm text-zinc-700 dark:text-zinc-300">
+                  <div>
+                    <span className="font-medium tabular-nums">{shift.time}</span>{" "}
+                    {shift.taskName ? (
+                      <>
+                        <span className="font-medium">{shift.taskName}</span> · {shift.eventName}
+                      </>
+                    ) : (
+                      shift.eventName
+                    )}
+                    {shift.location && <span className="text-zinc-500 dark:text-zinc-400"> · {shift.location}</span>}
+                  </div>
+                  {shift.taskNotes && <p className="text-xs text-zinc-600 dark:text-zinc-400">Your task: {shift.taskNotes}</p>}
+                  {(shift.eventNotes || shift.actions.length > 0) && (
+                    <details className="mt-0.5 text-xs text-zinc-600 dark:text-zinc-400">
+                      <summary className="cursor-pointer">Event {shift.eventTime}, notes and run of show</summary>
+                      {shift.eventNotes && <p className="mt-1 whitespace-pre-wrap">{shift.eventNotes}</p>}
+                      {shift.actions.length > 0 && (
+                        <ul className="mt-1">
+                          {shift.actions.map((a, i) => (
+                            <li key={i}>
+                              <span className="tabular-nums">{a.time || shift.eventTime.slice(0, 5)}</span> {a.label}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </details>
+                  )}
+                  <ChangeRequest shift={shift} name={name} password={password} requests={requests} onChange={onRequests} lock={lock} />
                 </div>
               ))}
             </li>
@@ -347,6 +481,7 @@ function DayColumn({
 }
 
 function TodayEventsView({ name, password, reset, lock }: StaffAccessProps) {
+  const [requests, setRequests] = useState<OwnRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [days, setDays] = useState<DayData[]>([]);
@@ -379,14 +514,15 @@ function TodayEventsView({ name, password, reset, lock }: StaffAccessProps) {
             lock(data.error || "Incorrect password.");
             return;
           }
-          throw new Error(data.error || "Failed to load today's events");
+          throw new Error(data.error || "Couldn't load your shifts");
         }
         if (cancelled) return;
         setDays(data.days);
         setWorkDays(data.workDays);
+        setRequests(data.requests ?? []);
       } catch {
         if (!cancelled) {
-          setError("Couldn't load today's events. Please try again.");
+          setError("Couldn't load your shifts. Please try again.");
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -434,7 +570,15 @@ function TodayEventsView({ name, password, reset, lock }: StaffAccessProps) {
 
       {!loading && !error && (
         <>
-          <MyShifts workDays={workDays} today={days[0]?.date} />
+          <MyShifts
+            workDays={workDays}
+            today={days[0]?.date}
+            name={name}
+            password={password}
+            requests={requests}
+            onRequests={setRequests}
+            lock={lock}
+          />
           <h2 className="mt-6 text-sm font-medium text-zinc-700 dark:text-zinc-300">
             Today &amp; tomorrow
           </h2>

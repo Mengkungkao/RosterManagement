@@ -2,28 +2,33 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import {
   ADMIN_COOKIE_NAME,
+  ADMIN_SESSION_SECONDS,
   getAdminSessionToken,
   isValidAdminPassword,
 } from "@/lib/admin-auth";
+import { badRequest, readJson, serverError } from "@/lib/http";
+import { clearFailures, lockedOutMinutes, recordFailure, tooManyAttemptsMessage } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
+const LIMIT_KEY = "admin";
+
 export async function POST(req: NextRequest) {
-  let body: unknown;
+  const { password } = ((await readJson(req)) ?? {}) as Record<string, unknown>;
+  if (typeof password !== "string" || password.length === 0) return badRequest("Password is required");
+
+  const wait = lockedOutMinutes(LIMIT_KEY);
+  if (wait > 0) return badRequest(tooManyAttemptsMessage(wait), 429);
+
   try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    if (!(await isValidAdminPassword(password))) {
+      recordFailure(LIMIT_KEY);
+      return badRequest("Incorrect password", 401);
+    }
+  } catch (err) {
+    return serverError("check the admin password", err);
   }
-
-  const { password } = (body ?? {}) as Record<string, unknown>;
-  if (typeof password !== "string" || password.length === 0) {
-    return NextResponse.json({ error: "Password is required" }, { status: 400 });
-  }
-
-  if (!isValidAdminPassword(password)) {
-    return NextResponse.json({ error: "Incorrect password" }, { status: 401 });
-  }
+  clearFailures(LIMIT_KEY);
 
   const cookieStore = await cookies();
   cookieStore.set(ADMIN_COOKIE_NAME, getAdminSessionToken(), {
@@ -31,7 +36,7 @@ export async function POST(req: NextRequest) {
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
-    maxAge: 60 * 60 * 24 * 7,
+    maxAge: ADMIN_SESSION_SECONDS,
   });
 
   return NextResponse.json({ ok: true });
